@@ -92,6 +92,22 @@ func (h *vmsHandler) hostname(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusAccepted, acceptedJob(j))
 }
 
+func (h *vmsHandler) rebuild(w http.ResponseWriter, r *http.Request) {
+	var req vm.RebuildRequest
+	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxIdempotentBody))
+	if err := dec.Decode(&req); err != nil {
+		writeError(w, errBadRequest("invalid JSON body"))
+		return
+	}
+	j, err := h.service.Rebuild(r.Context(), chi.URLParam(r, "id"), req)
+	if err != nil {
+		writeError(w, mapVMError(err))
+		return
+	}
+	w.Header().Set("Location", "/v1/jobs/"+j.ID)
+	writeJSON(w, http.StatusAccepted, acceptedJob(j))
+}
+
 func (h *vmsHandler) terminate(w http.ResponseWriter, r *http.Request) {
 	j, err := h.service.Terminate(r.Context(), chi.URLParam(r, "id"))
 	if err != nil {

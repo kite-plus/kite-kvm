@@ -82,6 +82,7 @@ func NewRouter(opts Options) http.Handler {
 				r.Post("/{id}/unsuspend", vms.powerOp(svc.Unsuspend))
 				r.Post("/{id}/password", vms.password)
 				r.Post("/{id}/hostname", vms.hostname)
+				r.Post("/{id}/rebuild", vms.rebuild)
 			})
 		})
 	})

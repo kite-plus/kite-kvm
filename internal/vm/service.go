@@ -215,6 +215,8 @@ func (s *Service) RunJob(ctx context.Context, j *model.Job) error {
 		return s.runUnsuspend(ctx, j.VMID)
 	case model.JobPassword, model.JobHostname:
 		return s.runReseed(ctx, j.VMID)
+	case model.JobRebuild:
+		return s.runRebuild(ctx, j.VMID)
 	default:
 		return fmt.Errorf("unsupported job type %q", j.Type)
 	}
@@ -367,6 +369,41 @@ func (s *Service) flavorBandwidth(flavorID string) int {
 		return f.BandwidthMbps
 	}
 	return 0
+}
+
+// networkAttachmentFor reconstructs the domain-XML network attachment from a
+// stored VM and its configured network.
+func (s *Service) networkAttachmentFor(v *model.VM) domainxml.NetworkAttachment {
+	att := domainxml.NetworkAttachment{}
+	n := s.cfg.NetworkByID(v.NetworkID)
+	if v.NetworkMode == model.NetworkBridge {
+		att.Mode = domainxml.ModeBridge
+		if n != nil {
+			att.Source = n.Bridge
+			att.VLAN = n.VLAN
+		}
+	} else {
+		att.Mode = domainxml.ModeNAT
+		if n != nil {
+			att.Source = n.LibvirtNetwork
+		}
+	}
+	return att
+}
+
+// buildDomainSpec reconstructs the full domain spec from a stored VM, for
+// redefining the domain after a rebuild or resize.
+func (s *Service) buildDomainSpec(v *model.VM) domainxml.Spec {
+	return domainxml.Spec{
+		Name:          v.DomainName,
+		VCPUs:         v.VCPUs,
+		MemoryMB:      v.MemoryMB,
+		DiskPath:      v.DiskPath,
+		SeedPath:      v.SeedPath,
+		MAC:           v.MAC,
+		Network:       s.networkAttachmentFor(v),
+		BandwidthMbps: s.flavorBandwidth(v.FlavorID),
+	}
 }
 
 // failVM marks the VM errored and returns the cause (no resources to reclaim).

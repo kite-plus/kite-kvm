@@ -415,6 +415,43 @@ func TestHostnameChange(t *testing.T) {
 	}
 }
 
+func TestRebuild(t *testing.T) {
+	svc, conn, st := testService(t)
+	ctx := context.Background()
+
+	cj, _ := svc.Create(ctx, CreateRequest{FlavorID: "s1.small", ImageID: "ubuntu-22.04"})
+	rec := waitVM(t, st, cj.VMID)
+	origDisk := rec.DiskPath
+
+	j, err := svc.Rebuild(ctx, rec.ID, RebuildRequest{ImageID: "ubuntu-22.04", Password: "fresh"})
+	if err != nil {
+		t.Fatalf("Rebuild: %v", err)
+	}
+	if done := waitJob(t, st, j.ID); done.State != model.JobSucceeded {
+		t.Fatalf("rebuild job %s: %s", done.State, done.Error)
+	}
+	got, _ := st.GetVM(ctx, rec.ID)
+	if got.Status != model.VMStatusRunning {
+		t.Errorf("status = %s, want running", got.Status)
+	}
+	if got.Password != "fresh" {
+		t.Errorf("password not applied: %q", got.Password)
+	}
+	if got.DiskPath != origDisk {
+		t.Errorf("disk path should be stable across rebuild: %q vs %q", got.DiskPath, origDisk)
+	}
+	if !conn.HasDomain(rec.DomainName) {
+		t.Error("domain not defined after rebuild")
+	}
+	if state, _ := conn.DomainState(ctx, rec.DomainName); state != libvirt.StateRunning {
+		t.Errorf("domain = %v, want running", state)
+	}
+
+	if _, err := svc.Rebuild(ctx, rec.ID, RebuildRequest{ImageID: "ghost"}); !errors.Is(err, ErrImageNotFound) {
+		t.Errorf("rebuild unknown image = %v, want ErrImageNotFound", err)
+	}
+}
+
 func TestCreateUnknownFlavor(t *testing.T) {
 	svc, _, _ := testService(t)
 	if _, err := svc.Create(context.Background(), CreateRequest{FlavorID: "nope", ImageID: "ubuntu-22.04"}); !errors.Is(err, ErrFlavorNotFound) {
