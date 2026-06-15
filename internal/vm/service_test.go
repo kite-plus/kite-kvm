@@ -136,6 +136,42 @@ func TestCreateBridge(t *testing.T) {
 	}
 }
 
+func TestListGetStatus(t *testing.T) {
+	svc, _, st := testService(t)
+	ctx := context.Background()
+
+	j, err := svc.Create(ctx, CreateRequest{FlavorID: "s1.small", ImageID: "ubuntu-22.04"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitVM(t, st, j.VMID)
+
+	list, err := svc.List(ctx)
+	if err != nil || len(list) != 1 {
+		t.Fatalf("List: %v len=%d", err, len(list))
+	}
+
+	got, err := svc.Get(ctx, j.VMID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if got.PowerState != model.PowerRunning {
+		t.Errorf("reconciled power state = %s, want running", got.PowerState)
+	}
+
+	info, err := svc.Status(ctx, j.VMID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Status != model.VMStatusRunning || info.PowerState != model.PowerRunning {
+		t.Errorf("status = %+v", info)
+	}
+
+	if _, err := svc.Get(ctx, "ghost"); !errors.Is(err, ErrVMNotFound) {
+		t.Errorf("expected ErrVMNotFound, got %v", err)
+	}
+}
+
 func TestCreateUnknownFlavor(t *testing.T) {
 	svc, _, _ := testService(t)
 	if _, err := svc.Create(context.Background(), CreateRequest{FlavorID: "nope", ImageID: "ubuntu-22.04"}); !errors.Is(err, ErrFlavorNotFound) {

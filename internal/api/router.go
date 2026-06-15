@@ -59,6 +59,9 @@ func NewRouter(opts Options) http.Handler {
 		r.Get("/jobs/{id}", jobs.get)
 
 		r.Route("/vms", func(r chi.Router) {
+			r.Get("/", vms.list)
+			r.Get("/{id}", vms.get)
+			r.Get("/{id}/status", vms.status)
 			// Mutating operations are idempotent and run asynchronously.
 			r.With(idem).Post("/", vms.create)
 		})

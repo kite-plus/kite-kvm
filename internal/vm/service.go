@@ -2,6 +2,7 @@ package vm
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -109,6 +110,74 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (*model.Job, er
 		return nil, err
 	}
 	return j, nil
+}
+
+// StatusInfo is the lightweight current-state view of a VM.
+type StatusInfo struct {
+	ID         string           `json:"id"`
+	Status     model.VMStatus   `json:"status"`
+	PowerState model.PowerState `json:"power_state"`
+}
+
+// List returns all VMs, each with its power state reconciled against libvirt.
+func (s *Service) List(ctx context.Context) ([]*model.VM, error) {
+	vms, err := s.store.ListVMs(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, v := range vms {
+		s.reconcilePower(ctx, v)
+	}
+	return vms, nil
+}
+
+// Get returns one VM with its power state reconciled against libvirt.
+func (s *Service) Get(ctx context.Context, id string) (*model.VM, error) {
+	v, err := s.store.GetVM(ctx, id)
+	if errors.Is(err, store.ErrNotFound) {
+		return nil, ErrVMNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	s.reconcilePower(ctx, v)
+	return v, nil
+}
+
+// Status returns the VM's lifecycle status and live power state.
+func (s *Service) Status(ctx context.Context, id string) (*StatusInfo, error) {
+	v, err := s.Get(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	return &StatusInfo{ID: v.ID, Status: v.Status, PowerState: v.PowerState}, nil
+}
+
+// reconcilePower refreshes the in-memory VM's power state from libvirt without
+// persisting (reads stay side-effect-free). Best-effort: on error the stored
+// value is kept.
+func (s *Service) reconcilePower(ctx context.Context, v *model.VM) {
+	if v.Status == model.VMStatusTerminated {
+		return
+	}
+	state, err := s.conn.DomainState(ctx, v.DomainName)
+	if err != nil {
+		return
+	}
+	v.PowerState = mapPowerState(state)
+}
+
+func mapPowerState(s libvirt.DomainState) model.PowerState {
+	switch s {
+	case libvirt.StateRunning:
+		return model.PowerRunning
+	case libvirt.StateShutoff:
+		return model.PowerShutoff
+	case libvirt.StatePaused:
+		return model.PowerPaused
+	default:
+		return model.PowerUnknown
+	}
 }
 
 // RunJob is the queue runner: it dispatches by job type.

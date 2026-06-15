@@ -5,6 +5,8 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/go-chi/chi/v5"
+
 	"github.com/kite-plus/kite-kvm/internal/model"
 	"github.com/kite-plus/kite-kvm/internal/store"
 	"github.com/kite-plus/kite-kvm/internal/vm"
@@ -12,6 +14,36 @@ import (
 
 type vmsHandler struct {
 	service *vm.Service
+}
+
+func (h *vmsHandler) list(w http.ResponseWriter, r *http.Request) {
+	vms, err := h.service.List(r.Context())
+	if err != nil {
+		writeError(w, mapVMError(err))
+		return
+	}
+	if vms == nil {
+		vms = []*model.VM{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"vms": vms})
+}
+
+func (h *vmsHandler) get(w http.ResponseWriter, r *http.Request) {
+	v, err := h.service.Get(r.Context(), chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, mapVMError(err))
+		return
+	}
+	writeJSON(w, http.StatusOK, v)
+}
+
+func (h *vmsHandler) status(w http.ResponseWriter, r *http.Request) {
+	st, err := h.service.Status(r.Context(), chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, mapVMError(err))
+		return
+	}
+	writeJSON(w, http.StatusOK, st)
 }
 
 func (h *vmsHandler) create(w http.ResponseWriter, r *http.Request) {
