@@ -54,6 +54,9 @@ func (ci CloudInit) userData() string {
 	b.WriteString("preserve_hostname: false\n")
 	fmt.Fprintf(&b, "ssh_pwauth: %t\n", ci.Password != "")
 	b.WriteString("disable_root: false\n")
+	// Preserve host SSH keys when cloud-init re-runs after a password re-seed
+	// (a new instance-id), so the host fingerprint does not churn.
+	b.WriteString("ssh_deletekeys: false\n")
 
 	b.WriteString("users:\n")
 	fmt.Fprintf(&b, "  - name: %s\n", user)

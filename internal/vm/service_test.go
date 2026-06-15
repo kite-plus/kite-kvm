@@ -284,6 +284,63 @@ func TestTerminateTeardown(t *testing.T) {
 	}
 }
 
+func TestSuspendUnsuspend(t *testing.T) {
+	svc, conn, st := testService(t)
+	ctx := context.Background()
+
+	cj, _ := svc.Create(ctx, CreateRequest{FlavorID: "s1.small", ImageID: "ubuntu-22.04"})
+	rec := waitVM(t, st, cj.VMID)
+	id := rec.ID
+
+	j, _ := svc.Suspend(ctx, id)
+	if done := waitJob(t, st, j.ID); done.State != model.JobSucceeded {
+		t.Fatalf("suspend job %s", done.State)
+	}
+	got, _ := st.GetVM(ctx, id)
+	if got.Status != model.VMStatusSuspended || got.PrevPowerState != model.PowerRunning {
+		t.Errorf("after suspend: status=%s prev=%s", got.Status, got.PrevPowerState)
+	}
+	if state, _ := conn.DomainState(ctx, rec.DomainName); state != libvirt.StateShutoff {
+		t.Errorf("suspended domain = %v, want shutoff", state)
+	}
+
+	j, _ = svc.Unsuspend(ctx, id)
+	if done := waitJob(t, st, j.ID); done.State != model.JobSucceeded {
+		t.Fatalf("unsuspend job %s", done.State)
+	}
+	got, _ = st.GetVM(ctx, id)
+	if got.Status != model.VMStatusRunning {
+		t.Errorf("after unsuspend status = %s, want running", got.Status)
+	}
+	if state, _ := conn.DomainState(ctx, rec.DomainName); state != libvirt.StateRunning {
+		t.Errorf("unsuspended domain = %v, want running", state)
+	}
+}
+
+func TestPasswordReset(t *testing.T) {
+	svc, _, st := testService(t)
+	ctx := context.Background()
+
+	cj, _ := svc.Create(ctx, CreateRequest{FlavorID: "s1.small", ImageID: "ubuntu-22.04", Password: "old"})
+	rec := waitVM(t, st, cj.VMID)
+
+	j, err := svc.PasswordReset(ctx, rec.ID, "newpass")
+	if err != nil {
+		t.Fatalf("PasswordReset: %v", err)
+	}
+	if done := waitJob(t, st, j.ID); done.State != model.JobSucceeded {
+		t.Fatalf("password job %s: %s", done.State, done.Error)
+	}
+	got, _ := st.GetVM(ctx, rec.ID)
+	if got.Password != "newpass" {
+		t.Errorf("password not updated: %q", got.Password)
+	}
+
+	if _, err := svc.PasswordReset(ctx, rec.ID, ""); !errors.Is(err, ErrInvalidRequest) {
+		t.Errorf("empty password = %v, want ErrInvalidRequest", err)
+	}
+}
+
 func TestCreateUnknownFlavor(t *testing.T) {
 	svc, _, _ := testService(t)
 	if _, err := svc.Create(context.Background(), CreateRequest{FlavorID: "nope", ImageID: "ubuntu-22.04"}); !errors.Is(err, ErrFlavorNotFound) {
