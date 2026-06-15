@@ -1,0 +1,80 @@
+# kite-kvm example configuration.
+# Copy to kite-kvm.yaml and adjust for your host.
+
+server:
+  # HTTP listen address.
+  addr: ":8443"
+  # TLS is mandatory unless `insecure: true` is set (dev only).
+  tls_cert: "/etc/kite-kvm/tls/server.crt"
+  tls_key: "/etc/kite-kvm/tls/server.key"
+  insecure: false
+
+auth:
+  # Bearer tokens accepted by the API. Prefer providing these via the
+  # KITE_AUTH_TOKENS environment variable (comma-separated) instead of a file.
+  tokens:
+    - "change-me-to-a-long-random-secret"
+  # Optional source IP allowlist (plain IPs or CIDRs). Empty = allow all.
+  ip_allowlist:
+    - "10.0.0.0/8"
+    - "127.0.0.1"
+
+libvirt:
+  uri: "qemu:///system"
+  storage_pool: "default"
+  # Read-only golden cloud images. Never boot a VM directly off these.
+  image_base_dir: "/var/lib/libvirt/images/base"
+  # Per-VM overlay disks and cloud-init seed ISOs are written here.
+  instance_dir: "/var/lib/libvirt/images"
+
+storage:
+  # Local agent state (VM mapping, jobs, idempotency keys, IP allocations).
+  state_path: "/var/lib/kite-kvm/state.db"
+
+networks:
+  # NAT network: VMs get a private 192.168.122.x lease pinned by MAC.
+  - id: "nat-default"
+    mode: "nat"
+    default: true
+    libvirt_network: "default"
+    subnet: "192.168.122.0/24"
+
+  # Bridge network: VMs get a real public IP from the pool via cloud-init.
+  - id: "public-1"
+    mode: "bridge"
+    bridge: "br0"
+    gateway: "203.0.113.1"
+    netmask: "255.255.255.0"
+    dns:
+      - "1.1.1.1"
+      - "8.8.8.8"
+    ip_pool:
+      - "203.0.113.10"
+      - "203.0.113.11"
+      - "203.0.113.12/31"
+
+flavors:
+  - id: "s1.small"
+    name: "Small"
+    vcpus: 1
+    memory_mb: 1024
+    disk_gb: 20
+    bandwidth_mbps: 100
+  - id: "s1.medium"
+    name: "Medium"
+    vcpus: 2
+    memory_mb: 2048
+    disk_gb: 40
+    bandwidth_mbps: 200
+
+images:
+  - id: "ubuntu-22.04"
+    name: "Ubuntu 22.04 LTS"
+    os_variant: "ubuntu22.04"
+    base_path: "/var/lib/libvirt/images/base/jammy-server-cloudimg-amd64.img"
+    default_user: "ubuntu"
+  - id: "debian-12"
+    name: "Debian 12"
+    os_variant: "debian12"
+    base_path: "/var/lib/libvirt/images/base/debian-12-genericcloud-amd64.qcow2"
+    default_user: "debian"
