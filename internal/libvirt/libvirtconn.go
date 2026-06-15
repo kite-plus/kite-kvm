@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	golibvirt "github.com/digitalocean/go-libvirt"
 	"github.com/digitalocean/go-libvirt/socket/dialers"
@@ -423,6 +424,98 @@ func tpUint64(v golibvirt.TypedParamValue) uint64 {
 	default:
 		return 0
 	}
+}
+
+func (c *libvirtConn) CreateSnapshot(ctx context.Context, domain, name, description string) error {
+	l, dom, err := c.lookup(ctx, domain)
+	if err != nil {
+		return err
+	}
+	_, err = l.DomainSnapshotCreateXML(dom, buildSnapshotXML(name, description), 0)
+	return err
+}
+
+func (c *libvirtConn) ListSnapshots(ctx context.Context, domain string) ([]SnapshotInfo, error) {
+	l, dom, err := c.lookup(ctx, domain)
+	if err != nil {
+		return nil, err
+	}
+	snaps, _, err := l.DomainListAllSnapshots(dom, 1, 0)
+	if err != nil {
+		return nil, err
+	}
+	currentName := ""
+	if cur, err := l.DomainSnapshotCurrent(dom, 0); err == nil {
+		currentName = cur.Name
+	}
+	out := make([]SnapshotInfo, 0, len(snaps))
+	for _, s := range snaps {
+		info := SnapshotInfo{Name: s.Name, Current: s.Name == currentName}
+		if desc, err := l.DomainSnapshotGetXMLDesc(s, 0); err == nil {
+			info.CreationTime, info.State = parseSnapshotXML(desc)
+		}
+		out = append(out, info)
+	}
+	return out, nil
+}
+
+func (c *libvirtConn) DeleteSnapshot(ctx context.Context, domain, name string) error {
+	l, dom, err := c.lookup(ctx, domain)
+	if err != nil {
+		return err
+	}
+	snap, err := l.DomainSnapshotLookupByName(dom, name, 0)
+	if err != nil {
+		if isLibvirtErr(err, golibvirt.ErrNoDomainSnapshot) {
+			return nil // already gone
+		}
+		return err
+	}
+	return l.DomainSnapshotDelete(snap, 0)
+}
+
+func (c *libvirtConn) RevertSnapshot(ctx context.Context, domain, name string) error {
+	l, dom, err := c.lookup(ctx, domain)
+	if err != nil {
+		return err
+	}
+	snap, err := l.DomainSnapshotLookupByName(dom, name, 0)
+	if err != nil {
+		return err
+	}
+	return l.DomainRevertToSnapshot(snap, 0)
+}
+
+func buildSnapshotXML(name, description string) string {
+	var b strings.Builder
+	b.WriteString("<domainsnapshot>")
+	fmt.Fprintf(&b, "<name>%s</name>", xmlEscape(name))
+	if description != "" {
+		fmt.Fprintf(&b, "<description>%s</description>", xmlEscape(description))
+	}
+	b.WriteString("</domainsnapshot>")
+	return b.String()
+}
+
+func parseSnapshotXML(desc string) (time.Time, string) {
+	var doc struct {
+		State        string `xml:"state"`
+		CreationTime int64  `xml:"creationTime"`
+	}
+	if err := xml.Unmarshal([]byte(desc), &doc); err != nil {
+		return time.Time{}, ""
+	}
+	var t time.Time
+	if doc.CreationTime > 0 {
+		t = time.Unix(doc.CreationTime, 0).UTC()
+	}
+	return t, doc.State
+}
+
+func xmlEscape(s string) string {
+	var b strings.Builder
+	_ = xml.EscapeText(&b, []byte(s))
+	return b.String()
 }
 
 // parseVNCFromXML extracts the VNC listen host and TCP port from a live domain

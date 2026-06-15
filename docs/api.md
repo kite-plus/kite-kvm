@@ -123,6 +123,18 @@ authenticated solely by this token (browsers cannot send a bearer header), so it
 sits outside the bearer/allowlist middleware; the VM's VNC stays bound to
 `127.0.0.1` and is only reachable through this proxy.
 
+## Snapshots
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/v1/vms/{id}/snapshots` | List snapshots (`{"snapshots": [{name, state, creation_time, current}]}`). |
+| POST | `/v1/vms/{id}/snapshots` | Create a snapshot (`{"name"?, "description"?}`; name auto-generated if omitted). |
+| DELETE | `/v1/vms/{id}/snapshots/{snap}` | Delete a snapshot. |
+| POST | `/v1/vms/{id}/snapshots/{snap}/revert` | Revert the VM to a snapshot. |
+
+Create/delete/revert are async (`202` + job, `Idempotency-Key` required). A
+running VM's snapshot includes memory state (a system checkpoint).
+
 ## Jobs
 
 | Method | Path | Description |

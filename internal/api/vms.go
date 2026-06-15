@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/kite-plus/kite-kvm/internal/libvirt"
 	"github.com/kite-plus/kite-kvm/internal/model"
 	"github.com/kite-plus/kite-kvm/internal/store"
 	"github.com/kite-plus/kite-kvm/internal/vm"
@@ -100,6 +102,57 @@ func (h *vmsHandler) resize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	j, err := h.service.Resize(r.Context(), chi.URLParam(r, "id"), req)
+	if err != nil {
+		writeError(w, mapVMError(err))
+		return
+	}
+	w.Header().Set("Location", "/v1/jobs/"+j.ID)
+	writeJSON(w, http.StatusAccepted, acceptedJob(j))
+}
+
+func (h *vmsHandler) listSnapshots(w http.ResponseWriter, r *http.Request) {
+	snaps, err := h.service.SnapshotList(r.Context(), chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, mapVMError(err))
+		return
+	}
+	if snaps == nil {
+		snaps = []libvirt.SnapshotInfo{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"snapshots": snaps})
+}
+
+func (h *vmsHandler) createSnapshot(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Name        string `json:"name"`
+		Description string `json:"description"`
+	}
+	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxIdempotentBody))
+	if err := dec.Decode(&req); err != nil && !errors.Is(err, io.EOF) {
+		writeError(w, errBadRequest("invalid JSON body"))
+		return
+	}
+	j, err := h.service.SnapshotCreate(r.Context(), chi.URLParam(r, "id"), req.Name, req.Description)
+	if err != nil {
+		writeError(w, mapVMError(err))
+		return
+	}
+	w.Header().Set("Location", "/v1/jobs/"+j.ID)
+	writeJSON(w, http.StatusAccepted, acceptedJob(j))
+}
+
+func (h *vmsHandler) deleteSnapshot(w http.ResponseWriter, r *http.Request) {
+	j, err := h.service.SnapshotDelete(r.Context(), chi.URLParam(r, "id"), chi.URLParam(r, "snap"))
+	if err != nil {
+		writeError(w, mapVMError(err))
+		return
+	}
+	w.Header().Set("Location", "/v1/jobs/"+j.ID)
+	writeJSON(w, http.StatusAccepted, acceptedJob(j))
+}
+
+func (h *vmsHandler) revertSnapshot(w http.ResponseWriter, r *http.Request) {
+	j, err := h.service.SnapshotRevert(r.Context(), chi.URLParam(r, "id"), chi.URLParam(r, "snap"))
 	if err != nil {
 		writeError(w, mapVMError(err))
 		return

@@ -7,6 +7,7 @@ package libvirt
 import (
 	"context"
 	"errors"
+	"time"
 )
 
 // DomainState is the libvirt power state, decoupled from the binding's enums
@@ -49,6 +50,14 @@ type DomainStats struct {
 	BlockWrBytes    uint64
 	BlockAllocation uint64
 	BlockCapacity   uint64
+}
+
+// SnapshotInfo describes a domain snapshot.
+type SnapshotInfo struct {
+	Name         string    `json:"name"`
+	State        string    `json:"state,omitempty"`
+	CreationTime time.Time `json:"creation_time"`
+	Current      bool      `json:"current"`
 }
 
 // StorageVolSpec describes a storage volume to create. A non-empty BackingPath
@@ -98,4 +107,10 @@ type Conn interface {
 	// Network: NAT static DHCP lease (MAC -> IP) on a libvirt network.
 	AddDHCPHost(ctx context.Context, network, mac, name, ip string) error
 	RemoveDHCPHost(ctx context.Context, network, mac string) error
+
+	// Snapshots.
+	CreateSnapshot(ctx context.Context, domain, name, description string) error
+	ListSnapshots(ctx context.Context, domain string) ([]SnapshotInfo, error)
+	DeleteSnapshot(ctx context.Context, domain, name string) error
+	RevertSnapshot(ctx context.Context, domain, name string) error
 }

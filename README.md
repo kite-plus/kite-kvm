@@ -29,6 +29,7 @@ authenticated REST API so a billing system (WHMCS-style) or a custom panel can
 - Billing verbs: suspend, unsuspend, password reset.
 - Reconfigure: change hostname, rebuild from image, resize / change package.
 - Browser VNC console: single-use token + websocket proxy to the VM's VNC port.
+- Snapshots: create, list, delete, and revert (system checkpoints).
 - Live resource stats (CPU / memory / network / block) with interval rates.
 - Provisioning: thin qcow2 overlay off a golden cloud image + cloud-init NoCloud
   seed (hostname, users, password, SSH keys, network), built in pure Go.
@@ -105,8 +106,9 @@ Mutating operations are asynchronous: they return `202` with a job, require an
 ## Roadmap
 
 Implemented: VM CRUD, power operations, suspend/unsuspend, password reset,
-hostname change, rebuild, resize, browser VNC console, live stats, NAT and
-bridged public IP, async jobs + idempotency + SQLite persistence.
+hostname change, rebuild, resize, browser VNC console, snapshots, live stats,
+NAT and bridged public IP, async jobs + idempotency + SQLite persistence.
 
-Planned: snapshots & backups, secondary IP / DNAT port forwarding, Prometheus
-metrics, a shipped WHMCS module, multi-host scheduling, and an LVM storage pool.
+Planned: snapshot export/backup to a file, secondary IP / DNAT port forwarding,
+Prometheus metrics, a shipped WHMCS module, multi-host scheduling, and an LVM
+storage pool.

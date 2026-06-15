@@ -97,6 +97,23 @@ func unmarshalStrings(s string) []string {
 	return out
 }
 
+func marshalMap(m map[string]string) string {
+	if len(m) == 0 {
+		return "{}"
+	}
+	b, _ := json.Marshal(m)
+	return string(b)
+}
+
+func unmarshalMap(s string) map[string]string {
+	if s == "" || s == "{}" {
+		return nil
+	}
+	var out map[string]string
+	_ = json.Unmarshal([]byte(s), &out)
+	return out
+}
+
 // --- VMs -------------------------------------------------------------------
 
 func (s *SQLiteStore) CreateVM(ctx context.Context, vm *model.VM) error {
@@ -212,10 +229,10 @@ func (s *SQLiteStore) CreateJob(ctx context.Context, job *model.Job) error {
 		job.CreatedAt = time.Now().UTC()
 	}
 	_, err := s.db.ExecContext(ctx, `INSERT INTO jobs (
-        id, type, vm_id, state, error, idempotency_key, created_at, started_at, finished_at
-    ) VALUES (?,?,?,?,?,?,?,?,?)`,
+        id, type, vm_id, state, error, idempotency_key, payload, created_at, started_at, finished_at
+    ) VALUES (?,?,?,?,?,?,?,?,?,?)`,
 		job.ID, string(job.Type), job.VMID, string(job.State), job.Error, job.IdempotencyKey,
-		fmtTime(job.CreatedAt), fmtTimePtr(job.StartedAt), fmtTimePtr(job.FinishedAt),
+		marshalMap(job.Payload), fmtTime(job.CreatedAt), fmtTimePtr(job.StartedAt), fmtTimePtr(job.FinishedAt),
 	)
 	if err != nil {
 		return mapConstraintErr(err)
@@ -223,23 +240,24 @@ func (s *SQLiteStore) CreateJob(ctx context.Context, job *model.Job) error {
 	return nil
 }
 
-const jobColumns = `id, type, vm_id, state, error, idempotency_key, created_at, started_at, finished_at`
+const jobColumns = `id, type, vm_id, state, error, idempotency_key, payload, created_at, started_at, finished_at`
 
 func scanJob(sc interface{ Scan(...any) error }) (*model.Job, error) {
 	var (
-		job                  model.Job
-		typ, state           string
-		createdAt            string
+		job                   model.Job
+		typ, state            string
+		payload, createdAt    string
 		startedAt, finishedAt sql.NullString
 	)
 	if err := sc.Scan(
 		&job.ID, &typ, &job.VMID, &state, &job.Error, &job.IdempotencyKey,
-		&createdAt, &startedAt, &finishedAt,
+		&payload, &createdAt, &startedAt, &finishedAt,
 	); err != nil {
 		return nil, err
 	}
 	job.Type = model.JobType(typ)
 	job.State = model.JobState(state)
+	job.Payload = unmarshalMap(payload)
 	job.CreatedAt = parseTime(createdAt)
 	job.StartedAt = parseTimePtr(startedAt)
 	job.FinishedAt = parseTimePtr(finishedAt)
@@ -257,10 +275,10 @@ func (s *SQLiteStore) GetJob(ctx context.Context, id string) (*model.Job, error)
 
 func (s *SQLiteStore) UpdateJob(ctx context.Context, job *model.Job) error {
 	res, err := s.db.ExecContext(ctx, `UPDATE jobs SET
-        type=?, vm_id=?, state=?, error=?, idempotency_key=?, started_at=?, finished_at=?
+        type=?, vm_id=?, state=?, error=?, idempotency_key=?, payload=?, started_at=?, finished_at=?
         WHERE id=?`,
 		string(job.Type), job.VMID, string(job.State), job.Error, job.IdempotencyKey,
-		fmtTimePtr(job.StartedAt), fmtTimePtr(job.FinishedAt), job.ID,
+		marshalMap(job.Payload), fmtTimePtr(job.StartedAt), fmtTimePtr(job.FinishedAt), job.ID,
 	)
 	if err != nil {
 		return err

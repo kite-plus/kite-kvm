@@ -73,6 +73,7 @@ func NewRouter(opts Options) http.Handler {
 			r.Get("/{id}", vms.get)
 			r.Get("/{id}/status", vms.status)
 			r.Get("/{id}/stats", vms.stats)
+			r.Get("/{id}/snapshots", vms.listSnapshots)
 
 			// Console: mint a single-use token; the browser then connects to
 			// /console/ws/{token} (mounted above, token-authenticated).
@@ -93,6 +94,9 @@ func NewRouter(opts Options) http.Handler {
 				r.Post("/{id}/hostname", vms.hostname)
 				r.Post("/{id}/rebuild", vms.rebuild)
 				r.Post("/{id}/resize", vms.resize)
+				r.Post("/{id}/snapshots", vms.createSnapshot)
+				r.Delete("/{id}/snapshots/{snap}", vms.deleteSnapshot)
+				r.Post("/{id}/snapshots/{snap}/revert", vms.revertSnapshot)
 			})
 		})
 	})

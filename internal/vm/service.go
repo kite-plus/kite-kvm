@@ -219,6 +219,12 @@ func (s *Service) RunJob(ctx context.Context, j *model.Job) error {
 		return s.runRebuild(ctx, j.VMID)
 	case model.JobResize:
 		return s.runResize(ctx, j.VMID)
+	case model.JobSnapshotCreate:
+		return s.runSnapshotCreate(ctx, j)
+	case model.JobSnapshotDelete:
+		return s.runSnapshotDelete(ctx, j)
+	case model.JobSnapshotRevert:
+		return s.runSnapshotRevert(ctx, j)
 	default:
 		return fmt.Errorf("unsupported job type %q", j.Type)
 	}

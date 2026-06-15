@@ -60,28 +60,31 @@ type VM struct {
 	SeedPath       string      `json:"-"`
 	// Password is the initial cloud-init password. Persisted for the async
 	// provisioning/password jobs; never serialized to clients.
-	Password string   `json:"-"`
-	SSHKeys  []string `json:"ssh_keys,omitempty"`
-	CreatedAt      time.Time   `json:"created_at"`
-	UpdatedAt      time.Time   `json:"updated_at"`
+	Password  string    `json:"-"`
+	SSHKeys   []string  `json:"ssh_keys,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 // JobType identifies the kind of asynchronous operation a Job performs.
 type JobType string
 
 const (
-	JobCreate    JobType = "create"
-	JobStart     JobType = "start"
-	JobShutdown  JobType = "shutdown"
-	JobReboot    JobType = "reboot"
-	JobStop      JobType = "stop"
-	JobSuspend   JobType = "suspend"
-	JobUnsuspend JobType = "unsuspend"
-	JobPassword  JobType = "password"
-	JobHostname  JobType = "hostname"
-	JobRebuild   JobType = "rebuild"
-	JobResize    JobType = "resize"
-	JobTerminate JobType = "terminate"
+	JobCreate         JobType = "create"
+	JobStart          JobType = "start"
+	JobShutdown       JobType = "shutdown"
+	JobReboot         JobType = "reboot"
+	JobStop           JobType = "stop"
+	JobSuspend        JobType = "suspend"
+	JobUnsuspend      JobType = "unsuspend"
+	JobPassword       JobType = "password"
+	JobHostname       JobType = "hostname"
+	JobRebuild        JobType = "rebuild"
+	JobResize         JobType = "resize"
+	JobSnapshotCreate JobType = "snapshot_create"
+	JobSnapshotDelete JobType = "snapshot_delete"
+	JobSnapshotRevert JobType = "snapshot_revert"
+	JobTerminate      JobType = "terminate"
 )
 
 // JobState is the position of a Job in its state machine.
@@ -96,15 +99,16 @@ const (
 
 // Job is a unit of asynchronous, mutating work tracked for polling.
 type Job struct {
-	ID             string     `json:"id"`
-	Type           JobType    `json:"type"`
-	VMID           string     `json:"vm_id,omitempty"`
-	State          JobState   `json:"state"`
-	Error          string     `json:"error,omitempty"`
-	IdempotencyKey string     `json:"-"`
-	CreatedAt      time.Time  `json:"created_at"`
-	StartedAt      *time.Time `json:"started_at,omitempty"`
-	FinishedAt     *time.Time `json:"finished_at,omitempty"`
+	ID             string            `json:"id"`
+	Type           JobType           `json:"type"`
+	VMID           string            `json:"vm_id,omitempty"`
+	State          JobState          `json:"state"`
+	Error          string            `json:"error,omitempty"`
+	IdempotencyKey string            `json:"-"`
+	Payload        map[string]string `json:"-"` // operation parameters (e.g. snapshot name)
+	CreatedAt      time.Time         `json:"created_at"`
+	StartedAt      *time.Time        `json:"started_at,omitempty"`
+	FinishedAt     *time.Time        `json:"finished_at,omitempty"`
 }
 
 // IPAllocation records that an IP within a network is assigned to a VM. The

@@ -513,6 +513,62 @@ func TestConsoleEndpoint(t *testing.T) {
 	}
 }
 
+func TestSnapshots(t *testing.T) {
+	svc, _, st := testService(t)
+	ctx := context.Background()
+
+	cj, _ := svc.Create(ctx, CreateRequest{FlavorID: "s1.small", ImageID: "ubuntu-22.04"})
+	rec := waitVM(t, st, cj.VMID)
+
+	// Create a named snapshot.
+	j, err := svc.SnapshotCreate(ctx, rec.ID, "before-upgrade", "checkpoint")
+	if err != nil {
+		t.Fatalf("SnapshotCreate: %v", err)
+	}
+	if done := waitJob(t, st, j.ID); done.State != model.JobSucceeded {
+		t.Fatalf("snapshot create job %s: %s", done.State, done.Error)
+	}
+
+	snaps, err := svc.SnapshotList(ctx, rec.ID)
+	if err != nil {
+		t.Fatalf("SnapshotList: %v", err)
+	}
+	if len(snaps) != 1 || snaps[0].Name != "before-upgrade" || !snaps[0].Current {
+		t.Fatalf("snapshots = %+v", snaps)
+	}
+
+	// Auto-named snapshot.
+	j2, _ := svc.SnapshotCreate(ctx, rec.ID, "", "")
+	waitJob(t, st, j2.ID)
+	snaps, _ = svc.SnapshotList(ctx, rec.ID)
+	if len(snaps) != 2 {
+		t.Fatalf("expected 2 snapshots, got %d", len(snaps))
+	}
+
+	// Revert.
+	jr, err := svc.SnapshotRevert(ctx, rec.ID, "before-upgrade")
+	if err != nil {
+		t.Fatalf("SnapshotRevert: %v", err)
+	}
+	if done := waitJob(t, st, jr.ID); done.State != model.JobSucceeded {
+		t.Fatalf("revert job %s: %s", done.State, done.Error)
+	}
+
+	// Delete.
+	jd, _ := svc.SnapshotDelete(ctx, rec.ID, "before-upgrade")
+	if done := waitJob(t, st, jd.ID); done.State != model.JobSucceeded {
+		t.Fatalf("delete job %s", done.State)
+	}
+	snaps, _ = svc.SnapshotList(ctx, rec.ID)
+	if len(snaps) != 1 {
+		t.Errorf("expected 1 snapshot after delete, got %d", len(snaps))
+	}
+
+	if _, err := svc.SnapshotDelete(ctx, rec.ID, ""); !errors.Is(err, ErrInvalidRequest) {
+		t.Errorf("empty snapshot name = %v, want ErrInvalidRequest", err)
+	}
+}
+
 func TestCreateUnknownFlavor(t *testing.T) {
 	svc, _, _ := testService(t)
 	if _, err := svc.Create(context.Background(), CreateRequest{FlavorID: "nope", ImageID: "ubuntu-22.04"}); !errors.Is(err, ErrFlavorNotFound) {

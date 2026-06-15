@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 )
 
 // Fake is an in-memory Conn implementation for development and tests on hosts
@@ -22,10 +23,11 @@ type Fake struct {
 	// paths returned by CreateVolume.
 	BaseDir string
 
-	domains map[string]*fakeDomain
-	volumes map[string]string             // "pool/name" -> path
-	dhcp    map[string]map[string]dhcpHost // network -> mac -> host
-	stats   map[string]DomainStats         // optional injected per-domain stats
+	domains   map[string]*fakeDomain
+	volumes   map[string]string              // "pool/name" -> path
+	dhcp      map[string]map[string]dhcpHost // network -> mac -> host
+	stats     map[string]DomainStats         // optional injected per-domain stats
+	snapshots map[string][]SnapshotInfo      // domain -> snapshots
 }
 
 type fakeDomain struct {
@@ -42,16 +44,17 @@ type dhcpHost struct {
 // NewFake returns a ready in-memory Conn.
 func NewFake() *Fake {
 	return &Fake{
-		BaseDir: "/var/lib/libvirt/images",
-		domains: map[string]*fakeDomain{},
-		volumes: map[string]string{},
-		dhcp:    map[string]map[string]dhcpHost{},
-		stats:   map[string]DomainStats{},
+		BaseDir:   "/var/lib/libvirt/images",
+		domains:   map[string]*fakeDomain{},
+		volumes:   map[string]string{},
+		dhcp:      map[string]map[string]dhcpHost{},
+		stats:     map[string]DomainStats{},
+		snapshots: map[string][]SnapshotInfo{},
 	}
 }
 
 func (f *Fake) Connect(context.Context) error { return nil }
-func (f *Fake) Close() error                   { return nil }
+func (f *Fake) Close() error                  { return nil }
 
 func (f *Fake) Ping(context.Context) error { return f.PingErr }
 
@@ -204,6 +207,61 @@ func (f *Fake) RemoveDHCPHost(_ context.Context, network, mac string) error {
 		delete(hosts, mac)
 	}
 	return nil
+}
+
+func (f *Fake) CreateSnapshot(_ context.Context, domain, name, _ string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	d, ok := f.domains[domain]
+	if !ok {
+		return ErrDomainNotFound
+	}
+	for i := range f.snapshots[domain] {
+		f.snapshots[domain][i].Current = false
+	}
+	f.snapshots[domain] = append(f.snapshots[domain], SnapshotInfo{
+		Name:         name,
+		State:        d.state.String(),
+		CreationTime: time.Now().UTC(),
+		Current:      true,
+	})
+	return nil
+}
+
+func (f *Fake) ListSnapshots(_ context.Context, domain string) ([]SnapshotInfo, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if _, ok := f.domains[domain]; !ok {
+		return nil, ErrDomainNotFound
+	}
+	out := make([]SnapshotInfo, len(f.snapshots[domain]))
+	copy(out, f.snapshots[domain])
+	return out, nil
+}
+
+func (f *Fake) DeleteSnapshot(_ context.Context, domain, name string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	snaps := f.snapshots[domain]
+	kept := snaps[:0]
+	for _, s := range snaps {
+		if s.Name != name {
+			kept = append(kept, s)
+		}
+	}
+	f.snapshots[domain] = kept
+	return nil
+}
+
+func (f *Fake) RevertSnapshot(_ context.Context, domain, name string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, s := range f.snapshots[domain] {
+		if s.Name == name {
+			return nil
+		}
+	}
+	return fmt.Errorf("libvirt fake: snapshot %q not found on %q", name, domain)
 }
 
 // --- test inspection helpers -----------------------------------------------
