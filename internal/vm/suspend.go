@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"strconv"
+	"strings"
 
 	"github.com/google/uuid"
 
@@ -39,7 +40,29 @@ func (s *Service) PasswordReset(ctx context.Context, id, password string) (*mode
 	if err := s.store.UpdateVM(ctx, v); err != nil {
 		return nil, err
 	}
-	j := job.New(model.JobPassword, id, "")
+	return s.enqueueReseed(ctx, v, model.JobPassword)
+}
+
+// SetHostname changes the VM's hostname. It updates the record and re-renders
+// the cloud-init seed; the change applies on the next boot.
+func (s *Service) SetHostname(ctx context.Context, id, hostname string) (*model.Job, error) {
+	hostname = strings.TrimSpace(hostname)
+	if hostname == "" {
+		return nil, fmt.Errorf("%w: hostname is required", ErrInvalidRequest)
+	}
+	v, err := s.loadOperable(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	v.Hostname = hostname
+	if err := s.store.UpdateVM(ctx, v); err != nil {
+		return nil, err
+	}
+	return s.enqueueReseed(ctx, v, model.JobHostname)
+}
+
+func (s *Service) enqueueReseed(ctx context.Context, v *model.VM, typ model.JobType) (*model.Job, error) {
+	j := job.New(typ, v.ID, "")
 	if err := s.queue.Enqueue(ctx, j); err != nil {
 		return nil, err
 	}
@@ -95,7 +118,10 @@ func (s *Service) runUnsuspend(ctx context.Context, vmID string) error {
 	return s.store.UpdateVM(ctx, v)
 }
 
-func (s *Service) runPassword(ctx context.Context, vmID string) error {
+// runReseed re-renders the cloud-init seed from the current VM record (hostname,
+// password, SSH keys) with a bumped instance-id so cloud-init re-applies on the
+// next boot. Backs both password reset and hostname change.
+func (s *Service) runReseed(ctx context.Context, vmID string) error {
 	v, err := s.store.GetVM(ctx, vmID)
 	if err != nil {
 		return err
@@ -120,7 +146,7 @@ func (s *Service) runPassword(ctx context.Context, vmID string) error {
 	if err := provision.BuildSeedISO(v.SeedPath, ci.Files()); err != nil {
 		return fmt.Errorf("rebuild seed: %w", err)
 	}
-	s.logger.Info("vm password re-seeded", "vm_id", v.ID)
+	s.logger.Info("vm re-seeded", "vm_id", v.ID)
 	return nil
 }
 

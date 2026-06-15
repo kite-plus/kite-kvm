@@ -68,9 +68,6 @@ func NewRouter(opts Options) http.Handler {
 			// Reserved capabilities: route shapes exist but return 501 until
 			// implemented (see the roadmap).
 			r.Post("/{id}/console", reserved("VNC console"))
-			r.Post("/{id}/resize", reserved("resize"))
-			r.Post("/{id}/rebuild", reserved("rebuild"))
-			r.Post("/{id}/hostname", reserved("hostname change"))
 
 			// Mutating operations are idempotent and run asynchronously.
 			r.Group(func(r chi.Router) {
@@ -84,6 +81,7 @@ func NewRouter(opts Options) http.Handler {
 				r.Post("/{id}/suspend", vms.powerOp(svc.Suspend))
 				r.Post("/{id}/unsuspend", vms.powerOp(svc.Unsuspend))
 				r.Post("/{id}/password", vms.password)
+				r.Post("/{id}/hostname", vms.hostname)
 			})
 		})
 	})

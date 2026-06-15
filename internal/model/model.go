@@ -78,6 +78,9 @@ const (
 	JobSuspend   JobType = "suspend"
 	JobUnsuspend JobType = "unsuspend"
 	JobPassword  JobType = "password"
+	JobHostname  JobType = "hostname"
+	JobRebuild   JobType = "rebuild"
+	JobResize    JobType = "resize"
 	JobTerminate JobType = "terminate"
 )
 

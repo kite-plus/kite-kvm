@@ -392,6 +392,29 @@ func TestStats(t *testing.T) {
 	}
 }
 
+func TestHostnameChange(t *testing.T) {
+	svc, _, st := testService(t)
+	ctx := context.Background()
+
+	cj, _ := svc.Create(ctx, CreateRequest{FlavorID: "s1.small", ImageID: "ubuntu-22.04", Hostname: "old"})
+	rec := waitVM(t, st, cj.VMID)
+
+	j, err := svc.SetHostname(ctx, rec.ID, "newname")
+	if err != nil {
+		t.Fatalf("SetHostname: %v", err)
+	}
+	if done := waitJob(t, st, j.ID); done.State != model.JobSucceeded {
+		t.Fatalf("hostname job %s: %s", done.State, done.Error)
+	}
+	got, _ := st.GetVM(ctx, rec.ID)
+	if got.Hostname != "newname" {
+		t.Errorf("hostname = %q, want newname", got.Hostname)
+	}
+	if _, err := svc.SetHostname(ctx, rec.ID, "  "); !errors.Is(err, ErrInvalidRequest) {
+		t.Errorf("blank hostname = %v, want ErrInvalidRequest", err)
+	}
+}
+
 func TestCreateUnknownFlavor(t *testing.T) {
 	svc, _, _ := testService(t)
 	if _, err := svc.Create(context.Background(), CreateRequest{FlavorID: "nope", ImageID: "ubuntu-22.04"}); !errors.Is(err, ErrFlavorNotFound) {

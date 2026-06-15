@@ -213,8 +213,8 @@ func (s *Service) RunJob(ctx context.Context, j *model.Job) error {
 		return s.runSuspend(ctx, j.VMID)
 	case model.JobUnsuspend:
 		return s.runUnsuspend(ctx, j.VMID)
-	case model.JobPassword:
-		return s.runPassword(ctx, j.VMID)
+	case model.JobPassword, model.JobHostname:
+		return s.runReseed(ctx, j.VMID)
 	default:
 		return fmt.Errorf("unsupported job type %q", j.Type)
 	}

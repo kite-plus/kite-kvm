@@ -96,9 +96,9 @@ All take `Idempotency-Key` and return `202` + job.
 | POST | `/v1/vms/{id}/suspend` | Stop + mark suspended (records prior power state). | `SuspendAccount` |
 | POST | `/v1/vms/{id}/unsuspend` | Restore prior power state. | `UnsuspendAccount` |
 | POST | `/v1/vms/{id}/password` | Reset password (`{"password": "..."}`). Applies on next boot. | — |
-| POST | `/v1/vms/{id}/resize` | **501** — reserved. | `ChangePackage` |
-| POST | `/v1/vms/{id}/rebuild` | **501** — reserved. | — |
-| POST | `/v1/vms/{id}/hostname` | **501** — reserved. | — |
+| POST | `/v1/vms/{id}/hostname` | Change hostname (`{"hostname": "..."}`). Applies on next boot. | — |
+| POST | `/v1/vms/{id}/rebuild` | Reinstall from an image (`{"image_id"?, "password"?, "ssh_keys"?}`). Recreates the disk; data is lost. | — |
+| POST | `/v1/vms/{id}/resize` | Change package (`{"flavor_id": "..."}`). Disk is grow-only; causes a brief reboot. | `ChangePackage` |
 
 ## Console
 
