@@ -47,6 +47,16 @@ func (h *vmsHandler) status(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, st)
 }
 
+func (h *vmsHandler) terminate(w http.ResponseWriter, r *http.Request) {
+	j, err := h.service.Terminate(r.Context(), chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, mapVMError(err))
+		return
+	}
+	w.Header().Set("Location", "/v1/jobs/"+j.ID)
+	writeJSON(w, http.StatusAccepted, acceptedJob(j))
+}
+
 func (h *vmsHandler) create(w http.ResponseWriter, r *http.Request) {
 	var req vm.CreateRequest
 	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxIdempotentBody))

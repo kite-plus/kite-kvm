@@ -202,9 +202,45 @@ func (s *Service) RunJob(ctx context.Context, j *model.Job) error {
 		return s.runCreate(ctx, j.VMID)
 	case model.JobStart, model.JobShutdown, model.JobReboot, model.JobStop:
 		return s.runPower(ctx, j.VMID, j.Type)
+	case model.JobTerminate:
+		return s.runTerminate(ctx, j.VMID)
 	default:
 		return fmt.Errorf("unsupported job type %q", j.Type)
 	}
+}
+
+// Terminate schedules full teardown of a VM. It is idempotent: terminating an
+// already-terminated VM succeeds as a no-op.
+func (s *Service) Terminate(ctx context.Context, id string) (*model.Job, error) {
+	if _, err := s.store.GetVM(ctx, id); err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			return nil, ErrVMNotFound
+		}
+		return nil, err
+	}
+	j := job.New(model.JobTerminate, id, "")
+	if err := s.queue.Enqueue(ctx, j); err != nil {
+		return nil, err
+	}
+	return j, nil
+}
+
+// runTerminate destroys and undefines the domain, deletes the overlay disk and
+// seed, releases the MAC/IP allocation, and marks the VM terminated. Every step
+// is best-effort and idempotent so retries and partial states converge cleanly.
+func (s *Service) runTerminate(ctx context.Context, vmID string) error {
+	v, err := s.store.GetVM(ctx, vmID)
+	if err != nil {
+		return err
+	}
+	if v.Status == model.VMStatusTerminated {
+		return nil
+	}
+	s.teardownPartial(ctx, v, v.MAC)
+	v.Status = model.VMStatusTerminated
+	v.PowerState = model.PowerShutoff
+	s.logger.Info("vm terminated", "vm_id", v.ID)
+	return s.store.UpdateVM(ctx, v)
 }
 
 func (s *Service) runCreate(ctx context.Context, vmID string) error {

@@ -68,6 +68,7 @@ func NewRouter(opts Options) http.Handler {
 			r.Group(func(r chi.Router) {
 				r.Use(idem)
 				r.Post("/", vms.create)
+				r.Delete("/{id}", vms.terminate)
 				r.Post("/{id}/start", vms.powerOp(svc.Start))
 				r.Post("/{id}/shutdown", vms.powerOp(svc.Shutdown))
 				r.Post("/{id}/reboot", vms.powerOp(svc.Reboot))

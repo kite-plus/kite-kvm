@@ -3,6 +3,7 @@ package vm
 import (
 	"context"
 	"errors"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -226,6 +227,60 @@ func TestPowerOperations(t *testing.T) {
 	j, _ = svc.Reboot(ctx, id)
 	if done := waitJob(t, st, j.ID); done.State != model.JobSucceeded {
 		t.Fatalf("reboot job %s", done.State)
+	}
+}
+
+func TestTerminateTeardown(t *testing.T) {
+	svc, conn, st := testService(t)
+	ctx := context.Background()
+
+	cj, _ := svc.Create(ctx, CreateRequest{FlavorID: "s1.small", ImageID: "ubuntu-22.04"})
+	vmRec := waitVM(t, st, cj.VMID)
+	id := vmRec.ID
+	seedPath := vmRec.SeedPath
+
+	j, err := svc.Terminate(ctx, id)
+	if err != nil {
+		t.Fatalf("Terminate: %v", err)
+	}
+	if done := waitJob(t, st, j.ID); done.State != model.JobSucceeded {
+		t.Fatalf("terminate job %s: %s", done.State, done.Error)
+	}
+
+	if conn.HasDomain(vmRec.DomainName) {
+		t.Error("domain not undefined")
+	}
+	if conn.HasVolume("default", id+".qcow2") {
+		t.Error("overlay volume not deleted")
+	}
+	if conn.DHCPHostIP("default", vmRec.MAC) != "" {
+		t.Error("dhcp lease not released")
+	}
+	if seedPath != "" {
+		if _, err := os.Stat(seedPath); err == nil {
+			t.Error("seed iso not removed")
+		}
+	}
+	got, _ := st.GetVM(ctx, id)
+	if got.Status != model.VMStatusTerminated {
+		t.Errorf("status = %s, want terminated", got.Status)
+	}
+	// The IP is freed and can be reallocated.
+	cj2, _ := svc.Create(ctx, CreateRequest{FlavorID: "s1.small", ImageID: "ubuntu-22.04"})
+	vm2 := waitVM(t, st, cj2.VMID)
+	if vm2.IP != vmRec.IP {
+		t.Errorf("reclaimed IP = %s, want %s", vm2.IP, vmRec.IP)
+	}
+
+	// Terminate is idempotent.
+	j2, _ := svc.Terminate(ctx, id)
+	if done := waitJob(t, st, j2.ID); done.State != model.JobSucceeded {
+		t.Errorf("repeat terminate = %s", done.State)
+	}
+
+	// Power ops on a terminated VM are rejected.
+	if _, err := svc.Start(ctx, id); !errors.Is(err, ErrVMTerminated) {
+		t.Errorf("start terminated = %v, want ErrVMTerminated", err)
 	}
 }
 
