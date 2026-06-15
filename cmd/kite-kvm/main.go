@@ -49,6 +49,7 @@ func run(configPath string, logger *slog.Logger) error {
 
 	router := api.NewRouter(api.Options{
 		Logger: logger,
+		Auth:   cfg.Auth,
 		// Readiness is wired to a real libvirt connectivity check once the
 		// libvirt client is introduced.
 		Ready: func(context.Context) error { return nil },
