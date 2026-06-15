@@ -24,10 +24,52 @@ make test         # 运行单元测试
 make run          # 本地运行
 ```
 
-## 部署
+## 本地运行（macOS 开发）
 
-被控节点需运行在装有 `libvirtd` / KVM 的 Linux 宿主机上，并对 libvirt socket 有访问权限（通常加入 `libvirt` 组）。详见后续的 `deploy/` 与 `docs/api.md`。
+无 libvirt 时，把 `libvirt.uri` 设为 `fake://` 即可用内存假实现跑通全流程：
+
+```yaml
+server: {addr: "127.0.0.1:8443", insecure: true}
+auth: {tokens: ["devtoken"]}
+libvirt: {uri: "fake://", instance_dir: "/tmp/kite-instances"}
+storage: {state_path: "/tmp/kite.db"}
+networks: [{id: nat-default, mode: nat, default: true, libvirt_network: default, subnet: "192.168.122.0/24"}]
+flavors: [{id: s1.small, name: Small, vcpus: 1, memory_mb: 1024, disk_gb: 20}]
+images:  [{id: ubuntu-22.04, name: Ubuntu 22.04, base_path: /tmp/base.img, default_user: ubuntu}]
+```
+
+```bash
+make run                # 或 ./bin/kite-kvm -config configs/dev.yaml
+curl -k -H "Authorization: Bearer devtoken" \
+  -H "Idempotency-Key: $(uuidgen)" -H "Content-Type: application/json" \
+  -d '{"flavor_id":"s1.small","image_id":"ubuntu-22.04","hostname":"web1"}' \
+  https://127.0.0.1:8443/v1/vms
+```
+
+## 部署（Linux 宿主机）
+
+被控节点运行在装有 `libvirtd` / KVM 的 Linux 宿主机上，并对 libvirt socket 有访问权限（通常加入 `libvirt` 组）。
+
+前置条件：
+- 一个 libvirt 存储池（默认 `default`，目录型，位于 `/var/lib/libvirt/images`）。
+- 只读金镜像放在 `libvirt.image_base_dir`（如 Ubuntu/Debian cloud img，自带 cloud-init 与 virtio）。
+- NAT：默认 `default`/virbr0 网络；桥接：宿主预置网桥（如 `br0`）+ 公网 IP 池。
+- 服务 TLS 证书与 Bearer Token。
+
+步骤：
+
+```bash
+make build-linux                         # 交叉编译出静态二进制
+sudo install bin/kite-kvm-linux-amd64 /usr/local/bin/kite-kvm
+sudo install -D configs/kite-kvm.example.yaml /etc/kite-kvm/kite-kvm.yaml   # 按需修改
+sudo install -D deploy/kite-kvm.service /etc/systemd/system/kite-kvm.service
+sudo useradd -r -g libvirt kite-kvm
+sudo systemctl enable --now kite-kvm
+```
+
+API 参考见 [docs/api.md](docs/api.md)。
 
 ## 状态
 
-初版开发中，按功能点逐步提交。范围与路线图见项目计划。
+初版已实现：VM 增删改查、电源操作、suspend/unsuspend、改密码、资源统计、
+NAT 与桥接公网 IP、异步任务 + 幂等键 + SQLite 持久化。VNC 控制台等见路线图。

@@ -65,6 +65,13 @@ func NewRouter(opts Options) http.Handler {
 			r.Get("/{id}/status", vms.status)
 			r.Get("/{id}/stats", vms.stats)
 
+			// Reserved capabilities: route shapes exist but return 501 until
+			// implemented (see the roadmap).
+			r.Post("/{id}/console", reserved("VNC console"))
+			r.Post("/{id}/resize", reserved("resize"))
+			r.Post("/{id}/rebuild", reserved("rebuild"))
+			r.Post("/{id}/hostname", reserved("hostname change"))
+
 			// Mutating operations are idempotent and run asynchronously.
 			r.Group(func(r chi.Router) {
 				r.Use(idem)

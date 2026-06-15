@@ -1,0 +1,30 @@
+[Unit]
+Description=kite-kvm KVM control node
+Documentation=https://github.com/kite-plus/kite-kvm
+After=network-online.target libvirtd.service
+Wants=network-online.target
+Requires=libvirtd.service
+
+[Service]
+Type=simple
+# Run as a dedicated user that is a member of the libvirt group so the agent
+# can reach qemu:///system without running as root.
+User=kite-kvm
+Group=libvirt
+ExecStart=/usr/local/bin/kite-kvm -config /etc/kite-kvm/kite-kvm.yaml
+Restart=on-failure
+RestartSec=3
+
+# State directory: /var/lib/kite-kvm (SQLite database).
+StateDirectory=kite-kvm
+
+# Hardening. The agent writes VM disks and seed ISOs under the libvirt images
+# directory, so that path must stay writable.
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/kite-kvm /var/lib/libvirt/images
+
+[Install]
+WantedBy=multi-user.target
