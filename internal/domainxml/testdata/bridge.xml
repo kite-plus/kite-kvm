@@ -1,0 +1,56 @@
+<domain type="kvm">
+  <name>kvm-vm2</name>
+  <uuid>22222222-2222-2222-2222-222222222222</uuid>
+  <memory unit="MiB">1024</memory>
+  <currentMemory unit="MiB">1024</currentMemory>
+  <vcpu placement="static">1</vcpu>
+  <os>
+    <type arch="x86_64" machine="q35">hvm</type>
+    <boot dev="hd"></boot>
+  </os>
+  <features>
+    <acpi></acpi>
+    <apic></apic>
+  </features>
+  <cpu mode="host-passthrough"></cpu>
+  <clock offset="utc"></clock>
+  <on_poweroff>destroy</on_poweroff>
+  <on_reboot>restart</on_reboot>
+  <on_crash>destroy</on_crash>
+  <devices>
+    <disk type="file" device="disk">
+      <driver name="qemu" type="qcow2"></driver>
+      <source file="/var/lib/libvirt/images/vm2.qcow2"></source>
+      <target dev="vda" bus="virtio"></target>
+    </disk>
+    <disk type="file" device="cdrom">
+      <driver name="qemu" type="raw"></driver>
+      <source file="/var/lib/libvirt/images/vm2-seed.iso"></source>
+      <target dev="sda" bus="sata"></target>
+      <readonly></readonly>
+    </disk>
+    <interface type="bridge">
+      <mac address="52:54:00:aa:bb:02"></mac>
+      <source bridge="br0"></source>
+      <model type="virtio"></model>
+      <vlan>
+        <tag id="100"></tag>
+      </vlan>
+      <bandwidth>
+        <inbound average="25000"></inbound>
+        <outbound average="25000"></outbound>
+      </bandwidth>
+    </interface>
+    <serial type="pty">
+      <target port="0"></target>
+    </serial>
+    <console type="pty">
+      <target type="serial" port="0"></target>
+    </console>
+    <graphics type="vnc" port="-1" autoport="yes" listen="127.0.0.1"></graphics>
+    <video>
+      <model type="vga"></model>
+    </video>
+    <memballoon model="virtio"></memballoon>
+  </devices>
+</domain>

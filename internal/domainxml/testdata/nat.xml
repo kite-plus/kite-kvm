@@ -1,0 +1,49 @@
+<domain type="kvm">
+  <name>kvm-vm1</name>
+  <uuid>11111111-1111-1111-1111-111111111111</uuid>
+  <memory unit="MiB">2048</memory>
+  <currentMemory unit="MiB">2048</currentMemory>
+  <vcpu placement="static">2</vcpu>
+  <os>
+    <type arch="x86_64" machine="q35">hvm</type>
+    <boot dev="hd"></boot>
+  </os>
+  <features>
+    <acpi></acpi>
+    <apic></apic>
+  </features>
+  <cpu mode="host-passthrough"></cpu>
+  <clock offset="utc"></clock>
+  <on_poweroff>destroy</on_poweroff>
+  <on_reboot>restart</on_reboot>
+  <on_crash>destroy</on_crash>
+  <devices>
+    <disk type="file" device="disk">
+      <driver name="qemu" type="qcow2"></driver>
+      <source file="/var/lib/libvirt/images/vm1.qcow2"></source>
+      <target dev="vda" bus="virtio"></target>
+    </disk>
+    <disk type="file" device="cdrom">
+      <driver name="qemu" type="raw"></driver>
+      <source file="/var/lib/libvirt/images/vm1-seed.iso"></source>
+      <target dev="sda" bus="sata"></target>
+      <readonly></readonly>
+    </disk>
+    <interface type="network">
+      <mac address="52:54:00:aa:bb:01"></mac>
+      <source network="default"></source>
+      <model type="virtio"></model>
+    </interface>
+    <serial type="pty">
+      <target port="0"></target>
+    </serial>
+    <console type="pty">
+      <target type="serial" port="0"></target>
+    </console>
+    <graphics type="vnc" port="-1" autoport="yes" listen="127.0.0.1"></graphics>
+    <video>
+      <model type="vga"></model>
+    </video>
+    <memballoon model="virtio"></memballoon>
+  </devices>
+</domain>
