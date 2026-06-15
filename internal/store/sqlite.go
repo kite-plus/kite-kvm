@@ -109,12 +109,12 @@ func (s *SQLiteStore) CreateVM(ctx context.Context, vm *model.VM) error {
         id, domain_name, domain_uuid, hostname, flavor_id, image_id,
         vcpus, memory_mb, disk_gb, network_id, network_mode, mac, ip,
         gateway, netmask, status, power_state, prev_power_state,
-        disk_path, seed_path, ssh_keys, created_at, updated_at
-    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        disk_path, seed_path, password, ssh_keys, created_at, updated_at
+    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		vm.ID, vm.DomainName, vm.DomainUUID, vm.Hostname, vm.FlavorID, vm.ImageID,
 		vm.VCPUs, vm.MemoryMB, vm.DiskGB, vm.NetworkID, string(vm.NetworkMode), vm.MAC, vm.IP,
 		vm.Gateway, vm.Netmask, string(vm.Status), string(vm.PowerState), string(vm.PrevPowerState),
-		vm.DiskPath, vm.SeedPath, marshalStrings(vm.SSHKeys), fmtTime(vm.CreatedAt), fmtTime(vm.UpdatedAt),
+		vm.DiskPath, vm.SeedPath, vm.Password, marshalStrings(vm.SSHKeys), fmtTime(vm.CreatedAt), fmtTime(vm.UpdatedAt),
 	)
 	if err != nil {
 		return mapConstraintErr(err)
@@ -125,7 +125,7 @@ func (s *SQLiteStore) CreateVM(ctx context.Context, vm *model.VM) error {
 const vmColumns = `id, domain_name, domain_uuid, hostname, flavor_id, image_id,
     vcpus, memory_mb, disk_gb, network_id, network_mode, mac, ip,
     gateway, netmask, status, power_state, prev_power_state,
-    disk_path, seed_path, ssh_keys, created_at, updated_at`
+    disk_path, seed_path, password, ssh_keys, created_at, updated_at`
 
 func scanVM(sc interface{ Scan(...any) error }) (*model.VM, error) {
 	var (
@@ -137,7 +137,7 @@ func scanVM(sc interface{ Scan(...any) error }) (*model.VM, error) {
 		&vm.ID, &vm.DomainName, &vm.DomainUUID, &vm.Hostname, &vm.FlavorID, &vm.ImageID,
 		&vm.VCPUs, &vm.MemoryMB, &vm.DiskGB, &vm.NetworkID, &mode, &vm.MAC, &vm.IP,
 		&vm.Gateway, &vm.Netmask, &status, &power, &prevPow,
-		&vm.DiskPath, &vm.SeedPath, &sshKeys, &createdAt, &updatedAt,
+		&vm.DiskPath, &vm.SeedPath, &vm.Password, &sshKeys, &createdAt, &updatedAt,
 	); err != nil {
 		return nil, err
 	}
@@ -183,12 +183,12 @@ func (s *SQLiteStore) UpdateVM(ctx context.Context, vm *model.VM) error {
         domain_name=?, domain_uuid=?, hostname=?, flavor_id=?, image_id=?,
         vcpus=?, memory_mb=?, disk_gb=?, network_id=?, network_mode=?, mac=?, ip=?,
         gateway=?, netmask=?, status=?, power_state=?, prev_power_state=?,
-        disk_path=?, seed_path=?, ssh_keys=?, updated_at=?
+        disk_path=?, seed_path=?, password=?, ssh_keys=?, updated_at=?
         WHERE id=?`,
 		vm.DomainName, vm.DomainUUID, vm.Hostname, vm.FlavorID, vm.ImageID,
 		vm.VCPUs, vm.MemoryMB, vm.DiskGB, vm.NetworkID, string(vm.NetworkMode), vm.MAC, vm.IP,
 		vm.Gateway, vm.Netmask, string(vm.Status), string(vm.PowerState), string(vm.PrevPowerState),
-		vm.DiskPath, vm.SeedPath, marshalStrings(vm.SSHKeys), fmtTime(vm.UpdatedAt),
+		vm.DiskPath, vm.SeedPath, vm.Password, marshalStrings(vm.SSHKeys), fmtTime(vm.UpdatedAt),
 		vm.ID,
 	)
 	if err != nil {

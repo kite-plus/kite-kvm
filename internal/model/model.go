@@ -58,7 +58,10 @@ type VM struct {
 	PrevPowerState PowerState  `json:"-"`
 	DiskPath       string      `json:"-"`
 	SeedPath       string      `json:"-"`
-	SSHKeys        []string    `json:"ssh_keys,omitempty"`
+	// Password is the initial cloud-init password. Persisted for the async
+	// provisioning/password jobs; never serialized to clients.
+	Password string   `json:"-"`
+	SSHKeys  []string `json:"ssh_keys,omitempty"`
 	CreatedAt      time.Time   `json:"created_at"`
 	UpdatedAt      time.Time   `json:"updated_at"`
 }

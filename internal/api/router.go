@@ -13,15 +13,17 @@ import (
 	"github.com/kite-plus/kite-kvm/internal/catalog"
 	"github.com/kite-plus/kite-kvm/internal/config"
 	"github.com/kite-plus/kite-kvm/internal/store"
+	"github.com/kite-plus/kite-kvm/internal/vm"
 )
 
 // Options carries the router's dependencies.
 type Options struct {
-	Logger  *slog.Logger
-	Ready   ReadyFunc
-	Auth    config.Auth
-	Catalog *catalog.Catalog
-	Store   store.Store
+	Logger    *slog.Logger
+	Ready     ReadyFunc
+	Auth      config.Auth
+	Catalog   *catalog.Catalog
+	Store     store.Store
+	VMService *vm.Service
 }
 
 // NewRouter builds the HTTP handler with the base middleware chain, the health
@@ -43,6 +45,8 @@ func NewRouter(opts Options) http.Handler {
 
 	cat := &catalogHandler{catalog: opts.Catalog}
 	jobs := &jobsHandler{store: opts.Store}
+	vms := &vmsHandler{service: opts.VMService}
+	idem := idempotency(opts.Store)
 
 	r.Route("/v1", func(r chi.Router) {
 		// Every /v1 endpoint is gated by the source allowlist and a bearer
@@ -53,7 +57,11 @@ func NewRouter(opts Options) http.Handler {
 		r.Get("/flavors", cat.listFlavors)
 		r.Get("/images", cat.listImages)
 		r.Get("/jobs/{id}", jobs.get)
-		// Resource routes are mounted by later commits.
+
+		r.Route("/vms", func(r chi.Router) {
+			// Mutating operations are idempotent and run asynchronously.
+			r.With(idem).Post("/", vms.create)
+		})
 	})
 
 	return r

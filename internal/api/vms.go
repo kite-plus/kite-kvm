@@ -1,0 +1,58 @@
+package api
+
+import (
+	"encoding/json"
+	"errors"
+	"net/http"
+
+	"github.com/kite-plus/kite-kvm/internal/model"
+	"github.com/kite-plus/kite-kvm/internal/store"
+	"github.com/kite-plus/kite-kvm/internal/vm"
+)
+
+type vmsHandler struct {
+	service *vm.Service
+}
+
+func (h *vmsHandler) create(w http.ResponseWriter, r *http.Request) {
+	var req vm.CreateRequest
+	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxIdempotentBody))
+	if err := dec.Decode(&req); err != nil {
+		writeError(w, errBadRequest("invalid JSON body"))
+		return
+	}
+	j, err := h.service.Create(r.Context(), req)
+	if err != nil {
+		writeError(w, mapVMError(err))
+		return
+	}
+	w.Header().Set("Location", "/v1/jobs/"+j.ID)
+	writeJSON(w, http.StatusAccepted, acceptedJob(j))
+}
+
+// acceptedJob is the standard 202 body for an enqueued mutating operation.
+func acceptedJob(j *model.Job) map[string]any {
+	return map[string]any{
+		"job_id": j.ID,
+		"status": j.State,
+		"vm_id":  j.VMID,
+	}
+}
+
+// mapVMError maps service errors to API errors.
+func mapVMError(err error) error {
+	switch {
+	case errors.Is(err, vm.ErrFlavorNotFound),
+		errors.Is(err, vm.ErrImageNotFound),
+		errors.Is(err, vm.ErrNetworkNotFound):
+		return errUnprocessable(err.Error())
+	case errors.Is(err, vm.ErrInvalidRequest):
+		return errBadRequest(err.Error())
+	case errors.Is(err, vm.ErrVMNotFound):
+		return errNotFound(err.Error())
+	case errors.Is(err, store.ErrNoIPAvailable):
+		return errConflict(err.Error())
+	default:
+		return errInternal("internal server error")
+	}
+}

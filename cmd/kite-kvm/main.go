@@ -18,7 +18,10 @@ import (
 	"github.com/kite-plus/kite-kvm/internal/config"
 	"github.com/kite-plus/kite-kvm/internal/job"
 	"github.com/kite-plus/kite-kvm/internal/libvirt"
+	"github.com/kite-plus/kite-kvm/internal/network"
+	"github.com/kite-plus/kite-kvm/internal/provision"
 	"github.com/kite-plus/kite-kvm/internal/store"
+	"github.com/kite-plus/kite-kvm/internal/vm"
 )
 
 // jobWorkers is the number of concurrent in-process job workers.
@@ -68,17 +71,26 @@ func run(configPath string, logger *slog.Logger) error {
 	}
 	defer func() { _ = st.Close() }()
 
+	netmgr, err := network.NewManager(cfg, st, conn)
+	if err != nil {
+		return err
+	}
+	cat := catalog.New(cfg)
+	provisioner := provision.NewProvisioner(conn, cfg.Libvirt.StoragePool, cfg.Libvirt.InstanceDir)
+
 	queue := job.NewQueue(st, jobWorkers, logger)
-	// The job runner is installed by the VM service in a later commit.
+	vmService := vm.NewService(cfg, st, conn, cat, netmgr, provisioner, queue, logger)
+	// The runner is installed by NewService; start the workers now.
 	queue.Start(ctx)
 	defer queue.Stop()
 
 	router := api.NewRouter(api.Options{
-		Logger:  logger,
-		Auth:    cfg.Auth,
-		Ready:   conn.Ping,
-		Catalog: catalog.New(cfg),
-		Store:   st,
+		Logger:    logger,
+		Auth:      cfg.Auth,
+		Ready:     conn.Ping,
+		Catalog:   cat,
+		Store:     st,
+		VMService: vmService,
 	})
 
 	srv := api.NewServer(cfg.Server, router, logger)

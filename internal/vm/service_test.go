@@ -1,0 +1,155 @@
+package vm
+
+import (
+	"context"
+	"errors"
+	"path/filepath"
+	"testing"
+	"time"
+
+	"github.com/kite-plus/kite-kvm/internal/catalog"
+	"github.com/kite-plus/kite-kvm/internal/config"
+	"github.com/kite-plus/kite-kvm/internal/job"
+	"github.com/kite-plus/kite-kvm/internal/libvirt"
+	"github.com/kite-plus/kite-kvm/internal/model"
+	"github.com/kite-plus/kite-kvm/internal/network"
+	"github.com/kite-plus/kite-kvm/internal/provision"
+	"github.com/kite-plus/kite-kvm/internal/store"
+)
+
+func testService(t *testing.T) (*Service, *libvirt.Fake, store.Store) {
+	t.Helper()
+	dir := t.TempDir()
+	st, err := store.Open(context.Background(), filepath.Join(dir, "state.db"))
+	if err != nil {
+		t.Fatalf("store.Open: %v", err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+
+	conn := libvirt.NewFake()
+	conn.BaseDir = dir
+
+	cfg := &config.Config{
+		Libvirt: config.Libvirt{StoragePool: "default", InstanceDir: dir},
+		Networks: []config.Network{
+			{ID: "nat-default", Mode: config.NetworkModeNAT, Default: true, LibvirtNetwork: "default", Subnet: "192.168.122.0/24"},
+			{ID: "public-1", Mode: config.NetworkModeBridge, Bridge: "br0", Gateway: "203.0.113.1", Netmask: "255.255.255.0", IPPool: []string{"203.0.113.10", "203.0.113.11"}},
+		},
+		Flavors: []config.Flavor{{ID: "s1.small", Name: "Small", VCPUs: 1, MemoryMB: 1024, DiskGB: 20, BandwidthMbps: 100}},
+		Images:  []config.Image{{ID: "ubuntu-22.04", Name: "Ubuntu", OSVariant: "ubuntu22.04", BasePath: "/base/jammy.img", DefaultUser: "ubuntu"}},
+	}
+	netmgr, err := network.NewManager(cfg, st, conn)
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+	prov := provision.NewProvisioner(conn, "default", dir)
+	q := job.NewQueue(st, 2, nil)
+	svc := NewService(cfg, st, conn, catalog.New(cfg), netmgr, prov, q, nil)
+	q.Start(context.Background())
+	t.Cleanup(q.Stop)
+	return svc, conn, st
+}
+
+func waitVM(t *testing.T, st store.Store, id string) *model.VM {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		vm, err := st.GetVM(context.Background(), id)
+		if err != nil {
+			t.Fatalf("GetVM: %v", err)
+		}
+		if vm.Status == model.VMStatusRunning || vm.Status == model.VMStatusError {
+			return vm
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatal("vm did not finish provisioning")
+	return nil
+}
+
+func TestCreateNAT(t *testing.T) {
+	svc, conn, st := testService(t)
+	ctx := context.Background()
+
+	j, err := svc.Create(ctx, CreateRequest{
+		FlavorID: "s1.small",
+		ImageID:  "ubuntu-22.04",
+		Hostname: "web1",
+		Password: "secret",
+		SSHKeys:  []string{"ssh-ed25519 AAAA"},
+	})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if j.Type != model.JobCreate {
+		t.Errorf("job type = %s", j.Type)
+	}
+
+	vm := waitVM(t, st, j.VMID)
+	if vm.Status != model.VMStatusRunning {
+		t.Fatalf("status = %s, want running", vm.Status)
+	}
+	if vm.IP != "192.168.122.2" {
+		t.Errorf("IP = %s, want 192.168.122.2", vm.IP)
+	}
+	if vm.MAC == "" || vm.DomainUUID == "" {
+		t.Errorf("missing mac/uuid: %+v", vm)
+	}
+	if !conn.HasDomain(vm.DomainName) {
+		t.Error("domain not defined")
+	}
+	if state, _ := conn.DomainState(ctx, vm.DomainName); state != libvirt.StateRunning {
+		t.Errorf("domain state = %v, want running", state)
+	}
+	if !conn.HasVolume("default", vm.ID+".qcow2") {
+		t.Error("overlay volume not created")
+	}
+	if ip := conn.DHCPHostIP("default", vm.MAC); ip != vm.IP {
+		t.Errorf("dhcp lease = %q, want %q", ip, vm.IP)
+	}
+}
+
+func TestCreateBridge(t *testing.T) {
+	svc, conn, st := testService(t)
+	ctx := context.Background()
+
+	j, err := svc.Create(ctx, CreateRequest{
+		FlavorID: "s1.small",
+		ImageID:  "ubuntu-22.04",
+		Network:  NetworkRequest{Mode: "bridge"},
+	})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	vm := waitVM(t, st, j.VMID)
+	if vm.Status != model.VMStatusRunning {
+		t.Fatalf("status = %s, want running", vm.Status)
+	}
+	if vm.NetworkMode != model.NetworkBridge {
+		t.Errorf("network mode = %s, want bridge", vm.NetworkMode)
+	}
+	if vm.IP != "203.0.113.10" {
+		t.Errorf("IP = %s, want 203.0.113.10", vm.IP)
+	}
+	if !conn.HasDomain(vm.DomainName) {
+		t.Error("domain not defined")
+	}
+}
+
+func TestCreateUnknownFlavor(t *testing.T) {
+	svc, _, _ := testService(t)
+	if _, err := svc.Create(context.Background(), CreateRequest{FlavorID: "nope", ImageID: "ubuntu-22.04"}); !errors.Is(err, ErrFlavorNotFound) {
+		t.Errorf("expected ErrFlavorNotFound, got %v", err)
+	}
+}
+
+func TestCreateUnknownNetwork(t *testing.T) {
+	svc, _, _ := testService(t)
+	_, err := svc.Create(context.Background(), CreateRequest{
+		FlavorID: "s1.small", ImageID: "ubuntu-22.04",
+		Network: NetworkRequest{NetworkID: "ghost"},
+	})
+	if !errors.Is(err, ErrNetworkNotFound) {
+		t.Errorf("expected ErrNetworkNotFound, got %v", err)
+	}
+}
