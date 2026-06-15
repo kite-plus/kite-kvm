@@ -58,12 +58,21 @@ func NewRouter(opts Options) http.Handler {
 		r.Get("/images", cat.listImages)
 		r.Get("/jobs/{id}", jobs.get)
 
+		svc := opts.VMService
 		r.Route("/vms", func(r chi.Router) {
 			r.Get("/", vms.list)
 			r.Get("/{id}", vms.get)
 			r.Get("/{id}/status", vms.status)
+
 			// Mutating operations are idempotent and run asynchronously.
-			r.With(idem).Post("/", vms.create)
+			r.Group(func(r chi.Router) {
+				r.Use(idem)
+				r.Post("/", vms.create)
+				r.Post("/{id}/start", vms.powerOp(svc.Start))
+				r.Post("/{id}/shutdown", vms.powerOp(svc.Shutdown))
+				r.Post("/{id}/reboot", vms.powerOp(svc.Reboot))
+				r.Post("/{id}/stop", vms.powerOp(svc.Stop))
+			})
 		})
 	})
 

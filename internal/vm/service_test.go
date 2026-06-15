@@ -172,6 +172,63 @@ func TestListGetStatus(t *testing.T) {
 	}
 }
 
+func waitJob(t *testing.T, st store.Store, id string) *model.Job {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		j, err := st.GetJob(context.Background(), id)
+		if err != nil {
+			t.Fatalf("GetJob: %v", err)
+		}
+		if j.State == model.JobSucceeded || j.State == model.JobFailed {
+			return j
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatal("job did not finish")
+	return nil
+}
+
+func TestPowerOperations(t *testing.T) {
+	svc, conn, st := testService(t)
+	ctx := context.Background()
+
+	cj, _ := svc.Create(ctx, CreateRequest{FlavorID: "s1.small", ImageID: "ubuntu-22.04"})
+	vmRec := waitVM(t, st, cj.VMID)
+	id := vmRec.ID
+
+	// Force stop.
+	j, err := svc.Stop(ctx, id)
+	if err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+	if done := waitJob(t, st, j.ID); done.State != model.JobSucceeded {
+		t.Fatalf("stop job %s", done.State)
+	}
+	if state, _ := conn.DomainState(ctx, vmRec.DomainName); state != libvirt.StateShutoff {
+		t.Errorf("after stop, domain = %v, want shutoff", state)
+	}
+	got, _ := st.GetVM(ctx, id)
+	if got.Status != model.VMStatusStopped {
+		t.Errorf("status after stop = %s, want stopped", got.Status)
+	}
+
+	// Start again.
+	j, _ = svc.Start(ctx, id)
+	if done := waitJob(t, st, j.ID); done.State != model.JobSucceeded {
+		t.Fatalf("start job %s", done.State)
+	}
+	if state, _ := conn.DomainState(ctx, vmRec.DomainName); state != libvirt.StateRunning {
+		t.Errorf("after start, domain = %v, want running", state)
+	}
+
+	// Reboot keeps it running.
+	j, _ = svc.Reboot(ctx, id)
+	if done := waitJob(t, st, j.ID); done.State != model.JobSucceeded {
+		t.Fatalf("reboot job %s", done.State)
+	}
+}
+
 func TestCreateUnknownFlavor(t *testing.T) {
 	svc, _, _ := testService(t)
 	if _, err := svc.Create(context.Background(), CreateRequest{FlavorID: "nope", ImageID: "ubuntu-22.04"}); !errors.Is(err, ErrFlavorNotFound) {

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -62,6 +63,22 @@ func (h *vmsHandler) create(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusAccepted, acceptedJob(j))
 }
 
+// vmOp is a service method that enqueues a job for a VM by id.
+type vmOp func(ctx context.Context, id string) (*model.Job, error)
+
+// powerOp builds a handler that enqueues the given operation and returns 202.
+func (h *vmsHandler) powerOp(op vmOp) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		j, err := op(r.Context(), chi.URLParam(r, "id"))
+		if err != nil {
+			writeError(w, mapVMError(err))
+			return
+		}
+		w.Header().Set("Location", "/v1/jobs/"+j.ID)
+		writeJSON(w, http.StatusAccepted, acceptedJob(j))
+	}
+}
+
 // acceptedJob is the standard 202 body for an enqueued mutating operation.
 func acceptedJob(j *model.Job) map[string]any {
 	return map[string]any{
@@ -82,6 +99,8 @@ func mapVMError(err error) error {
 		return errBadRequest(err.Error())
 	case errors.Is(err, vm.ErrVMNotFound):
 		return errNotFound(err.Error())
+	case errors.Is(err, vm.ErrVMTerminated):
+		return errConflict(err.Error())
 	case errors.Is(err, store.ErrNoIPAvailable):
 		return errConflict(err.Error())
 	default:

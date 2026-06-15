@@ -180,11 +180,28 @@ func mapPowerState(s libvirt.DomainState) model.PowerState {
 	}
 }
 
+// loadOperable fetches a VM and rejects operations on terminated VMs.
+func (s *Service) loadOperable(ctx context.Context, id string) (*model.VM, error) {
+	v, err := s.store.GetVM(ctx, id)
+	if errors.Is(err, store.ErrNotFound) {
+		return nil, ErrVMNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	if v.Status == model.VMStatusTerminated {
+		return nil, ErrVMTerminated
+	}
+	return v, nil
+}
+
 // RunJob is the queue runner: it dispatches by job type.
 func (s *Service) RunJob(ctx context.Context, j *model.Job) error {
 	switch j.Type {
 	case model.JobCreate:
 		return s.runCreate(ctx, j.VMID)
+	case model.JobStart, model.JobShutdown, model.JobReboot, model.JobStop:
+		return s.runPower(ctx, j.VMID, j.Type)
 	default:
 		return fmt.Errorf("unsupported job type %q", j.Type)
 	}
