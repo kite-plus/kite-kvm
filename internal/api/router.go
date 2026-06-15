@@ -12,9 +12,13 @@ import (
 
 	"github.com/kite-plus/kite-kvm/internal/catalog"
 	"github.com/kite-plus/kite-kvm/internal/config"
+	"github.com/kite-plus/kite-kvm/internal/console"
 	"github.com/kite-plus/kite-kvm/internal/store"
 	"github.com/kite-plus/kite-kvm/internal/vm"
 )
+
+// consoleTokenTTL is how long a minted VNC console token stays valid.
+const consoleTokenTTL = 60 * time.Second
 
 // Options carries the router's dependencies.
 type Options struct {
@@ -46,7 +50,12 @@ func NewRouter(opts Options) http.Handler {
 	cat := &catalogHandler{catalog: opts.Catalog}
 	jobs := &jobsHandler{store: opts.Store}
 	vms := &vmsHandler{service: opts.VMService}
+	cons := &consoleHandler{service: opts.VMService, tokens: console.NewTokenStore(consoleTokenTTL)}
 	idem := idempotency(opts.Store)
+
+	// The console websocket authenticates by single-use token only (browsers
+	// cannot send a bearer header), so it lives outside the /v1 auth middleware.
+	r.Get("/console/ws/{token}", cons.serveWS)
 
 	r.Route("/v1", func(r chi.Router) {
 		// Every /v1 endpoint is gated by the source allowlist and a bearer
@@ -65,9 +74,9 @@ func NewRouter(opts Options) http.Handler {
 			r.Get("/{id}/status", vms.status)
 			r.Get("/{id}/stats", vms.stats)
 
-			// Reserved capabilities: route shapes exist but return 501 until
-			// implemented (see the roadmap).
-			r.Post("/{id}/console", reserved("VNC console"))
+			// Console: mint a single-use token; the browser then connects to
+			// /console/ws/{token} (mounted above, token-authenticated).
+			r.Post("/{id}/console", cons.request)
 
 			// Mutating operations are idempotent and run asynchronously.
 			r.Group(func(r chi.Router) {

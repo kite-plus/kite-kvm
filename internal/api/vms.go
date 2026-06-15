@@ -188,6 +188,8 @@ func mapVMError(err error) error {
 		return errNotFound(err.Error())
 	case errors.Is(err, vm.ErrVMTerminated):
 		return errConflict(err.Error())
+	case errors.Is(err, vm.ErrVMNotRunning):
+		return errConflict(err.Error())
 	case errors.Is(err, store.ErrNoIPAvailable):
 		return errConflict(err.Error())
 	default:

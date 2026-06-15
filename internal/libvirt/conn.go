@@ -83,6 +83,9 @@ type Conn interface {
 	DomainState(ctx context.Context, name string) (DomainState, error)
 	ListDomains(ctx context.Context) ([]string, error)
 	DomainXML(ctx context.Context, name string) (string, error)
+	// DomainVNCAddress returns the live VNC listen host and TCP port of a
+	// running domain (used to proxy a browser console).
+	DomainVNCAddress(ctx context.Context, name string) (host string, port int, err error)
 
 	// Storage.
 	CreateVolume(ctx context.Context, spec StorageVolSpec) (path string, err error)

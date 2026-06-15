@@ -489,6 +489,30 @@ func TestResize(t *testing.T) {
 	}
 }
 
+func TestConsoleEndpoint(t *testing.T) {
+	svc, _, st := testService(t)
+	ctx := context.Background()
+
+	cj, _ := svc.Create(ctx, CreateRequest{FlavorID: "s1.small", ImageID: "ubuntu-22.04"})
+	rec := waitVM(t, st, cj.VMID)
+
+	host, port, err := svc.ConsoleEndpoint(ctx, rec.ID)
+	if err != nil {
+		t.Fatalf("ConsoleEndpoint: %v", err)
+	}
+	if host != "127.0.0.1" || port != 5901 {
+		t.Errorf("got %s:%d", host, port)
+	}
+
+	// A stopped VM has no VNC port.
+	if j, _ := svc.Stop(ctx, rec.ID); waitJob(t, st, j.ID).State != model.JobSucceeded {
+		t.Fatal("stop failed")
+	}
+	if _, _, err := svc.ConsoleEndpoint(ctx, rec.ID); !errors.Is(err, ErrVMNotRunning) {
+		t.Errorf("console on stopped vm = %v, want ErrVMNotRunning", err)
+	}
+}
+
 func TestCreateUnknownFlavor(t *testing.T) {
 	svc, _, _ := testService(t)
 	if _, err := svc.Create(context.Background(), CreateRequest{FlavorID: "nope", ImageID: "ubuntu-22.04"}); !errors.Is(err, ErrFlavorNotFound) {

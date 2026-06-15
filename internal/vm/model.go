@@ -13,6 +13,7 @@ var (
 	ErrInvalidRequest  = errors.New("invalid request")
 	ErrVMNotFound      = errors.New("vm not found")
 	ErrVMTerminated    = errors.New("vm is terminated")
+	ErrVMNotRunning    = errors.New("vm is not running")
 )
 
 // CreateRequest is the body of POST /v1/vms.

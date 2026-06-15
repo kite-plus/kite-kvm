@@ -22,6 +22,7 @@
 - 电源：启动、优雅关机、重启、强制关机。
 - 计费动作：挂起、解挂、重置密码。
 - 重配：改主机名、按镜像重装、变更套餐（resize）。
+- 浏览器 VNC 控制台：单次令牌 + websocket 代理到 VM 的 VNC 端口。
 - 实时资源统计（CPU / 内存 / 网络 / 磁盘）及区间速率。
 - 开通：基于只读金镜像的薄 qcow2 差分盘 + cloud-init NoCloud seed（主机名、用户、密码、SSH key、
   网络），纯 Go 构建。
@@ -90,8 +91,8 @@ sudo systemctl enable --now kite-kvm
 
 ## 路线图
 
-已实现：VM 增删改查、电源操作、挂起/解挂、重置密码、改主机名、重装、变更套餐、实时统计、
-NAT 与桥接公网 IP、异步任务 + 幂等键 + SQLite 持久化。
+已实现：VM 增删改查、电源操作、挂起/解挂、重置密码、改主机名、重装、变更套餐、
+浏览器 VNC 控制台、实时统计、NAT 与桥接公网 IP、异步任务 + 幂等键 + SQLite 持久化。
 
-计划中：VNC/noVNC 控制台（令牌 + websocket 代理）、快照与备份、二级 IP / DNAT 端口映射、
-Prometheus 指标、成品 WHMCS 模块、多宿主调度、LVM 存储池。
+计划中：快照与备份、二级 IP / DNAT 端口映射、Prometheus 指标、成品 WHMCS 模块、
+多宿主调度、LVM 存储池。

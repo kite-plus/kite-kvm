@@ -2,8 +2,10 @@ package libvirt
 
 import (
 	"context"
+	"encoding/xml"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -193,6 +195,18 @@ func (c *libvirtConn) DomainXML(ctx context.Context, name string) (string, error
 		return "", err
 	}
 	return l.DomainGetXMLDesc(dom, 0)
+}
+
+func (c *libvirtConn) DomainVNCAddress(ctx context.Context, name string) (string, int, error) {
+	l, dom, err := c.lookup(ctx, name)
+	if err != nil {
+		return "", 0, err
+	}
+	desc, err := l.DomainGetXMLDesc(dom, 0)
+	if err != nil {
+		return "", 0, err
+	}
+	return parseVNCFromXML(desc)
 }
 
 func (c *libvirtConn) CreateVolume(ctx context.Context, spec StorageVolSpec) (string, error) {
@@ -409,6 +423,45 @@ func tpUint64(v golibvirt.TypedParamValue) uint64 {
 	default:
 		return 0
 	}
+}
+
+// parseVNCFromXML extracts the VNC listen host and TCP port from a live domain
+// XML document. A port of -1 means VNC has not been allocated (domain not
+// running).
+func parseVNCFromXML(desc string) (string, int, error) {
+	var doc struct {
+		Devices struct {
+			Graphics []struct {
+				Type     string `xml:"type,attr"`
+				Port     string `xml:"port,attr"`
+				Listen   string `xml:"listen,attr"`
+				ListenEl []struct {
+					Address string `xml:"address,attr"`
+				} `xml:"listen"`
+			} `xml:"graphics"`
+		} `xml:"devices"`
+	}
+	if err := xml.Unmarshal([]byte(desc), &doc); err != nil {
+		return "", 0, fmt.Errorf("parse domain xml: %w", err)
+	}
+	for _, g := range doc.Devices.Graphics {
+		if g.Type != "vnc" {
+			continue
+		}
+		port, err := strconv.Atoi(strings.TrimSpace(g.Port))
+		if err != nil || port <= 0 {
+			return "", 0, fmt.Errorf("vnc port not allocated (domain not running)")
+		}
+		host := g.Listen
+		if host == "" && len(g.ListenEl) > 0 {
+			host = g.ListenEl[0].Address
+		}
+		if host == "" {
+			host = "127.0.0.1"
+		}
+		return host, port, nil
+	}
+	return "", 0, fmt.Errorf("no vnc graphics device on domain")
 }
 
 func isLibvirtErr(err error, code golibvirt.ErrorNumber) bool {

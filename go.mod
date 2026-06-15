@@ -5,6 +5,7 @@ go 1.25.0
 require gopkg.in/yaml.v3 v3.0.1
 
 require (
+	github.com/coder/websocket v1.8.15
 	github.com/digitalocean/go-libvirt v0.0.0-20260609165003-6254771e63a8
 	github.com/diskfs/go-diskfs v1.9.3
 	github.com/go-chi/chi/v5 v5.3.0

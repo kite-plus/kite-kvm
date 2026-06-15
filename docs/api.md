@@ -100,11 +100,28 @@ All take `Idempotency-Key` and return `202` + job.
 | POST | `/v1/vms/{id}/rebuild` | Reinstall from an image (`{"image_id"?, "password"?, "ssh_keys"?}`). Recreates the disk; data is lost. | — |
 | POST | `/v1/vms/{id}/resize` | Change package (`{"flavor_id": "..."}`). Disk is grow-only; causes a brief reboot. | `ChangePackage` |
 
-## Console
+## Console (VNC)
 
-| Method | Path | Description |
-|---|---|---|
-| POST | `/v1/vms/{id}/console` | **501** — reserved (noVNC token proxy is future work). |
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| POST | `/v1/vms/{id}/console` | bearer | Mint a single-use console token (VM must be running). |
+| GET | `/console/ws/{token}` | token only | WebSocket that proxies the VM's VNC (RFB) stream. |
+
+`POST /v1/vms/{id}/console` returns:
+
+```json
+{
+  "token": "B_oKTD9u...",
+  "websocket_path": "/console/ws/B_oKTD9u...",
+  "expires_at": "2026-06-15T17:08:22Z"
+}
+```
+
+A browser noVNC client connects to `wss://<agent-host>/console/ws/{token}`. The
+token is single-use and expires after 60s. The websocket endpoint is
+authenticated solely by this token (browsers cannot send a bearer header), so it
+sits outside the bearer/allowlist middleware; the VM's VNC stays bound to
+`127.0.0.1` and is only reachable through this proxy.
 
 ## Jobs
 

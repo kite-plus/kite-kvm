@@ -136,6 +136,15 @@ func (f *Fake) DomainXML(_ context.Context, name string) (string, error) {
 	return d.xml, nil
 }
 
+func (f *Fake) DomainVNCAddress(_ context.Context, name string) (string, int, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if _, ok := f.domains[name]; !ok {
+		return "", 0, ErrDomainNotFound
+	}
+	return "127.0.0.1", 5901, nil
+}
+
 func (f *Fake) CreateVolume(_ context.Context, spec StorageVolSpec) (string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
