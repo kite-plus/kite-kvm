@@ -10,14 +10,16 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 
+	"github.com/kite-plus/kite-kvm/internal/catalog"
 	"github.com/kite-plus/kite-kvm/internal/config"
 )
 
 // Options carries the router's dependencies.
 type Options struct {
-	Logger *slog.Logger
-	Ready  ReadyFunc
-	Auth   config.Auth
+	Logger  *slog.Logger
+	Ready   ReadyFunc
+	Auth    config.Auth
+	Catalog *catalog.Catalog
 }
 
 // NewRouter builds the HTTP handler with the base middleware chain, the health
@@ -37,11 +39,16 @@ func NewRouter(opts Options) http.Handler {
 	r.Get("/healthz", h.handleLive)
 	r.Get("/readyz", h.handleReady)
 
+	cat := &catalogHandler{catalog: opts.Catalog}
+
 	r.Route("/v1", func(r chi.Router) {
 		// Every /v1 endpoint is gated by the source allowlist and a bearer
 		// token. Health probes above stay unauthenticated for load balancers.
 		r.Use(ipAllowlist(opts.Auth.IPAllowlist, logger))
 		r.Use(bearerAuth(opts.Auth.Tokens))
+
+		r.Get("/flavors", cat.listFlavors)
+		r.Get("/images", cat.listImages)
 		// Resource routes are mounted by later commits.
 	})
 

@@ -14,6 +14,7 @@ import (
 	"syscall"
 
 	"github.com/kite-plus/kite-kvm/internal/api"
+	"github.com/kite-plus/kite-kvm/internal/catalog"
 	"github.com/kite-plus/kite-kvm/internal/config"
 	"github.com/kite-plus/kite-kvm/internal/libvirt"
 )
@@ -57,9 +58,10 @@ func run(configPath string, logger *slog.Logger) error {
 	defer func() { _ = conn.Close() }()
 
 	router := api.NewRouter(api.Options{
-		Logger: logger,
-		Auth:   cfg.Auth,
-		Ready:  conn.Ping,
+		Logger:  logger,
+		Auth:    cfg.Auth,
+		Ready:   conn.Ping,
+		Catalog: catalog.New(cfg),
 	})
 
 	srv := api.NewServer(cfg.Server, router, logger)
