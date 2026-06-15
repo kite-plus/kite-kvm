@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"strings"
+	"sync"
 
 	"github.com/google/uuid"
 
@@ -33,6 +34,9 @@ type Service struct {
 	provisioner *provision.Provisioner
 	queue       *job.Queue
 	logger      *slog.Logger
+
+	statsMu   sync.Mutex
+	lastStats map[string]statsSample
 }
 
 // NewService wires the dependencies and installs the job runner on the queue.
@@ -58,6 +62,7 @@ func NewService(
 		provisioner: prov,
 		queue:       queue,
 		logger:      logger,
+		lastStats:   make(map[string]statsSample),
 	}
 	queue.SetRunner(s.RunJob)
 	return s

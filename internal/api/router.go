@@ -63,6 +63,7 @@ func NewRouter(opts Options) http.Handler {
 			r.Get("/", vms.list)
 			r.Get("/{id}", vms.get)
 			r.Get("/{id}/status", vms.status)
+			r.Get("/{id}/stats", vms.stats)
 
 			// Mutating operations are idempotent and run asynchronously.
 			r.Group(func(r chi.Router) {

@@ -47,6 +47,15 @@ func (h *vmsHandler) status(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, st)
 }
 
+func (h *vmsHandler) stats(w http.ResponseWriter, r *http.Request) {
+	info, err := h.service.Stats(r.Context(), chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, mapVMError(err))
+		return
+	}
+	writeJSON(w, http.StatusOK, info)
+}
+
 func (h *vmsHandler) password(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Password string `json:"password"`

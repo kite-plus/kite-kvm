@@ -341,6 +341,57 @@ func TestPasswordReset(t *testing.T) {
 	}
 }
 
+func TestStats(t *testing.T) {
+	svc, conn, st := testService(t)
+	ctx := context.Background()
+
+	cj, _ := svc.Create(ctx, CreateRequest{FlavorID: "s1.small", ImageID: "ubuntu-22.04"})
+	rec := waitVM(t, st, cj.VMID)
+
+	conn.SetStats(rec.DomainName, libvirt.DomainStats{
+		CPUTimeNs:  1_000_000_000,
+		NetRxBytes: 1000,
+		NetTxBytes: 500,
+	})
+	// First call establishes the baseline (no rates yet).
+	first, err := svc.Stats(ctx, rec.ID)
+	if err != nil {
+		t.Fatalf("Stats: %v", err)
+	}
+	if first.NetRxBytes != 1000 || first.IntervalSeconds != 0 {
+		t.Errorf("first sample = %+v", first)
+	}
+
+	// Advance the counters; the next call computes non-negative rates.
+	conn.SetStats(rec.DomainName, libvirt.DomainStats{
+		CPUTimeNs:  1_500_000_000,
+		NetRxBytes: 3000,
+		NetTxBytes: 1500,
+	})
+	time.Sleep(10 * time.Millisecond)
+	second, err := svc.Stats(ctx, rec.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.NetRxBytes != 3000 {
+		t.Errorf("raw NetRxBytes = %d, want 3000", second.NetRxBytes)
+	}
+	if second.IntervalSeconds <= 0 {
+		t.Error("expected positive interval on second call")
+	}
+	if second.NetRxBps <= 0 || second.CPUPercent <= 0 {
+		t.Errorf("expected positive rates: rx=%v cpu=%v", second.NetRxBps, second.CPUPercent)
+	}
+
+	// Counter reset must not produce a negative rate.
+	conn.SetStats(rec.DomainName, libvirt.DomainStats{NetRxBytes: 10})
+	time.Sleep(5 * time.Millisecond)
+	third, _ := svc.Stats(ctx, rec.ID)
+	if third.NetRxBps != 0 {
+		t.Errorf("reset should yield 0 rate, got %v", third.NetRxBps)
+	}
+}
+
 func TestCreateUnknownFlavor(t *testing.T) {
 	svc, _, _ := testService(t)
 	if _, err := svc.Create(context.Background(), CreateRequest{FlavorID: "nope", ImageID: "ubuntu-22.04"}); !errors.Is(err, ErrFlavorNotFound) {
