@@ -8,6 +8,7 @@ require (
 	github.com/digitalocean/go-libvirt v0.0.0-20260609165003-6254771e63a8
 	github.com/diskfs/go-diskfs v1.9.3
 	github.com/go-chi/chi/v5 v5.3.0
+	github.com/google/uuid v1.6.0
 	modernc.org/sqlite v1.52.0
 )
 
@@ -16,7 +17,6 @@ require (
 	github.com/djherbis/times v1.6.0 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/elliotwutingfeng/asciiset v0.0.0-20260129054604-cfde2086bc57 // indirect
-	github.com/google/uuid v1.6.0 // indirect
 	github.com/klauspost/compress v1.18.5 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/ncruces/go-strftime v1.0.0 // indirect

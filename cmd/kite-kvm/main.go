@@ -16,8 +16,13 @@ import (
 	"github.com/kite-plus/kite-kvm/internal/api"
 	"github.com/kite-plus/kite-kvm/internal/catalog"
 	"github.com/kite-plus/kite-kvm/internal/config"
+	"github.com/kite-plus/kite-kvm/internal/job"
 	"github.com/kite-plus/kite-kvm/internal/libvirt"
+	"github.com/kite-plus/kite-kvm/internal/store"
 )
+
+// jobWorkers is the number of concurrent in-process job workers.
+const jobWorkers = 4
 
 // version is injected at build time via -ldflags "-X main.version=...".
 var version = "dev"
@@ -57,11 +62,23 @@ func run(configPath string, logger *slog.Logger) error {
 	}
 	defer func() { _ = conn.Close() }()
 
+	st, err := store.Open(ctx, cfg.Storage.StatePath)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = st.Close() }()
+
+	queue := job.NewQueue(st, jobWorkers, logger)
+	// The job runner is installed by the VM service in a later commit.
+	queue.Start(ctx)
+	defer queue.Stop()
+
 	router := api.NewRouter(api.Options{
 		Logger:  logger,
 		Auth:    cfg.Auth,
 		Ready:   conn.Ping,
 		Catalog: catalog.New(cfg),
+		Store:   st,
 	})
 
 	srv := api.NewServer(cfg.Server, router, logger)

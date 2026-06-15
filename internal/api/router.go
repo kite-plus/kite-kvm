@@ -12,6 +12,7 @@ import (
 
 	"github.com/kite-plus/kite-kvm/internal/catalog"
 	"github.com/kite-plus/kite-kvm/internal/config"
+	"github.com/kite-plus/kite-kvm/internal/store"
 )
 
 // Options carries the router's dependencies.
@@ -20,6 +21,7 @@ type Options struct {
 	Ready   ReadyFunc
 	Auth    config.Auth
 	Catalog *catalog.Catalog
+	Store   store.Store
 }
 
 // NewRouter builds the HTTP handler with the base middleware chain, the health
@@ -40,6 +42,7 @@ func NewRouter(opts Options) http.Handler {
 	r.Get("/readyz", h.handleReady)
 
 	cat := &catalogHandler{catalog: opts.Catalog}
+	jobs := &jobsHandler{store: opts.Store}
 
 	r.Route("/v1", func(r chi.Router) {
 		// Every /v1 endpoint is gated by the source allowlist and a bearer
@@ -49,6 +52,7 @@ func NewRouter(opts Options) http.Handler {
 
 		r.Get("/flavors", cat.listFlavors)
 		r.Get("/images", cat.listImages)
+		r.Get("/jobs/{id}", jobs.get)
 		// Resource routes are mounted by later commits.
 	})
 
