@@ -1,0 +1,404 @@
+package libvirt
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"strings"
+	"sync"
+
+	golibvirt "github.com/digitalocean/go-libvirt"
+	"github.com/digitalocean/go-libvirt/socket/dialers"
+)
+
+// libvirtConn is the go-libvirt-backed Conn. It talks to the local libvirtd over
+// the unix socket and (re)connects lazily.
+type libvirtConn struct {
+	uri string
+
+	mu sync.Mutex
+	l  *golibvirt.Libvirt
+}
+
+var _ Conn = (*libvirtConn)(nil)
+
+func newLibvirtConn(uri string) *libvirtConn { return &libvirtConn{uri: uri} }
+
+// ensure returns a connected client, dialing the local socket on first use or
+// after a disconnect.
+func (c *libvirtConn) ensure(context.Context) (*golibvirt.Libvirt, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.l != nil && c.l.IsConnected() {
+		return c.l, nil
+	}
+	l := golibvirt.NewWithDialer(dialers.NewLocal())
+	if err := l.ConnectToURI(golibvirt.ConnectURI(c.uri)); err != nil {
+		return nil, fmt.Errorf("connect %s: %w", c.uri, err)
+	}
+	c.l = l
+	return c.l, nil
+}
+
+func (c *libvirtConn) Connect(ctx context.Context) error {
+	_, err := c.ensure(ctx)
+	return err
+}
+
+func (c *libvirtConn) Close() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.l == nil {
+		return nil
+	}
+	err := c.l.Disconnect()
+	c.l = nil
+	return err
+}
+
+func (c *libvirtConn) Ping(ctx context.Context) error {
+	l, err := c.ensure(ctx)
+	if err != nil {
+		return err
+	}
+	if _, err := l.ConnectGetLibVersion(); err != nil {
+		c.reset()
+		return err
+	}
+	return nil
+}
+
+func (c *libvirtConn) reset() {
+	c.mu.Lock()
+	c.l = nil
+	c.mu.Unlock()
+}
+
+// lookup resolves a domain by name, mapping libvirt's not-found to
+// ErrDomainNotFound.
+func (c *libvirtConn) lookup(ctx context.Context, name string) (*golibvirt.Libvirt, golibvirt.Domain, error) {
+	l, err := c.ensure(ctx)
+	if err != nil {
+		return nil, golibvirt.Domain{}, err
+	}
+	dom, err := l.DomainLookupByName(name)
+	if err != nil {
+		if golibvirt.IsNotFound(err) {
+			return nil, golibvirt.Domain{}, ErrDomainNotFound
+		}
+		return nil, golibvirt.Domain{}, err
+	}
+	return l, dom, nil
+}
+
+func (c *libvirtConn) DefineDomain(ctx context.Context, xml string) (string, error) {
+	l, err := c.ensure(ctx)
+	if err != nil {
+		return "", err
+	}
+	dom, err := l.DomainDefineXML(xml)
+	if err != nil {
+		return "", err
+	}
+	return formatUUID(dom.UUID), nil
+}
+
+func (c *libvirtConn) StartDomain(ctx context.Context, name string) error {
+	l, dom, err := c.lookup(ctx, name)
+	if err != nil {
+		return err
+	}
+	return l.DomainCreate(dom)
+}
+
+func (c *libvirtConn) ShutdownDomain(ctx context.Context, name string) error {
+	l, dom, err := c.lookup(ctx, name)
+	if err != nil {
+		return err
+	}
+	return l.DomainShutdown(dom)
+}
+
+func (c *libvirtConn) RebootDomain(ctx context.Context, name string) error {
+	l, dom, err := c.lookup(ctx, name)
+	if err != nil {
+		return err
+	}
+	return l.DomainReboot(dom, 0)
+}
+
+func (c *libvirtConn) DestroyDomain(ctx context.Context, name string) error {
+	l, dom, err := c.lookup(ctx, name)
+	if err != nil {
+		return err
+	}
+	return l.DomainDestroy(dom)
+}
+
+func (c *libvirtConn) SuspendDomain(ctx context.Context, name string) error {
+	l, dom, err := c.lookup(ctx, name)
+	if err != nil {
+		return err
+	}
+	return l.DomainSuspend(dom)
+}
+
+func (c *libvirtConn) ResumeDomain(ctx context.Context, name string) error {
+	l, dom, err := c.lookup(ctx, name)
+	if err != nil {
+		return err
+	}
+	return l.DomainResume(dom)
+}
+
+func (c *libvirtConn) UndefineDomain(ctx context.Context, name string) error {
+	l, dom, err := c.lookup(ctx, name)
+	if err != nil {
+		return err
+	}
+	return l.DomainUndefine(dom)
+}
+
+func (c *libvirtConn) DomainState(ctx context.Context, name string) (DomainState, error) {
+	l, dom, err := c.lookup(ctx, name)
+	if err != nil {
+		return StateUnknown, err
+	}
+	state, _, err := l.DomainGetState(dom, 0)
+	if err != nil {
+		return StateUnknown, err
+	}
+	return mapState(state), nil
+}
+
+func (c *libvirtConn) ListDomains(ctx context.Context) ([]string, error) {
+	l, err := c.ensure(ctx)
+	if err != nil {
+		return nil, err
+	}
+	doms, _, err := l.ConnectListAllDomains(1, golibvirt.ConnectListDomainsActive|golibvirt.ConnectListDomainsInactive)
+	if err != nil {
+		return nil, err
+	}
+	names := make([]string, 0, len(doms))
+	for _, d := range doms {
+		names = append(names, d.Name)
+	}
+	return names, nil
+}
+
+func (c *libvirtConn) DomainXML(ctx context.Context, name string) (string, error) {
+	l, dom, err := c.lookup(ctx, name)
+	if err != nil {
+		return "", err
+	}
+	return l.DomainGetXMLDesc(dom, 0)
+}
+
+func (c *libvirtConn) CreateVolume(ctx context.Context, spec StorageVolSpec) (string, error) {
+	l, err := c.ensure(ctx)
+	if err != nil {
+		return "", err
+	}
+	pool, err := l.StoragePoolLookupByName(spec.Pool)
+	if err != nil {
+		return "", fmt.Errorf("lookup pool %q: %w", spec.Pool, err)
+	}
+	vol, err := l.StorageVolCreateXML(pool, buildVolumeXML(spec), 0)
+	if err != nil {
+		return "", err
+	}
+	return l.StorageVolGetPath(vol)
+}
+
+func (c *libvirtConn) DeleteVolume(ctx context.Context, pool, name string) error {
+	l, err := c.ensure(ctx)
+	if err != nil {
+		return err
+	}
+	p, err := l.StoragePoolLookupByName(pool)
+	if err != nil {
+		if isLibvirtErr(err, golibvirt.ErrNoStoragePool) {
+			return nil
+		}
+		return err
+	}
+	vol, err := l.StorageVolLookupByName(p, name)
+	if err != nil {
+		if isLibvirtErr(err, golibvirt.ErrNoStorageVol) {
+			return nil // already gone
+		}
+		return err
+	}
+	return l.StorageVolDelete(vol, 0)
+}
+
+func (c *libvirtConn) AllDomainStats(ctx context.Context) ([]DomainStats, error) {
+	l, err := c.ensure(ctx)
+	if err != nil {
+		return nil, err
+	}
+	statsFlags := uint32(golibvirt.DomainStatsState |
+		golibvirt.DomainStatsCPUTotal |
+		golibvirt.DomainStatsBalloon |
+		golibvirt.DomainStatsInterface |
+		golibvirt.DomainStatsBlock)
+	records, err := l.ConnectGetAllDomainStats(nil, statsFlags, 0)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]DomainStats, 0, len(records))
+	for _, rec := range records {
+		out = append(out, parseStats(rec))
+	}
+	return out, nil
+}
+
+func (c *libvirtConn) AddDHCPHost(ctx context.Context, network, mac, name, ip string) error {
+	l, net, err := c.lookupNetwork(ctx, network)
+	if err != nil {
+		return err
+	}
+	xml := fmt.Sprintf(`<host mac='%s' name='%s' ip='%s'/>`, mac, name, ip)
+	return l.NetworkUpdate(net,
+		uint32(golibvirt.NetworkUpdateCommandAddLast),
+		uint32(golibvirt.NetworkSectionIPDhcpHost),
+		-1, xml,
+		golibvirt.NetworkUpdateAffectLive|golibvirt.NetworkUpdateAffectConfig)
+}
+
+func (c *libvirtConn) RemoveDHCPHost(ctx context.Context, network, mac string) error {
+	l, net, err := c.lookupNetwork(ctx, network)
+	if err != nil {
+		return err
+	}
+	xml := fmt.Sprintf(`<host mac='%s'/>`, mac)
+	err = l.NetworkUpdate(net,
+		uint32(golibvirt.NetworkUpdateCommandDelete),
+		uint32(golibvirt.NetworkSectionIPDhcpHost),
+		-1, xml,
+		golibvirt.NetworkUpdateAffectLive|golibvirt.NetworkUpdateAffectConfig)
+	if err != nil && isLibvirtErr(err, golibvirt.ErrOperationInvalid) {
+		return nil // lease was not present
+	}
+	return err
+}
+
+func (c *libvirtConn) lookupNetwork(ctx context.Context, name string) (*golibvirt.Libvirt, golibvirt.Network, error) {
+	l, err := c.ensure(ctx)
+	if err != nil {
+		return nil, golibvirt.Network{}, err
+	}
+	net, err := l.NetworkLookupByName(name)
+	if err != nil {
+		return nil, golibvirt.Network{}, fmt.Errorf("lookup network %q: %w", name, err)
+	}
+	return l, net, nil
+}
+
+// --- helpers ---------------------------------------------------------------
+
+func mapState(state int32) DomainState {
+	switch golibvirt.DomainState(state) {
+	case golibvirt.DomainRunning:
+		return StateRunning
+	case golibvirt.DomainPaused:
+		return StatePaused
+	case golibvirt.DomainShutoff, golibvirt.DomainShutdown, golibvirt.DomainCrashed:
+		return StateShutoff
+	default:
+		return StateUnknown
+	}
+}
+
+func formatUUID(u golibvirt.UUID) string {
+	return fmt.Sprintf("%x-%x-%x-%x-%x", u[0:4], u[4:6], u[6:8], u[8:10], u[10:16])
+}
+
+func buildVolumeXML(spec StorageVolSpec) string {
+	var b strings.Builder
+	b.WriteString(`<volume type='file'>`)
+	fmt.Fprintf(&b, `<name>%s</name>`, spec.Name)
+	fmt.Fprintf(&b, `<capacity unit='bytes'>%d</capacity>`, spec.CapacityBytes)
+	b.WriteString(`<target><format type='qcow2'/></target>`)
+	if spec.BackingPath != "" {
+		backingFmt := spec.BackingFmt
+		if backingFmt == "" {
+			backingFmt = "qcow2"
+		}
+		fmt.Fprintf(&b, `<backingStore><path>%s</path><format type='%s'/></backingStore>`, spec.BackingPath, backingFmt)
+	}
+	b.WriteString(`</volume>`)
+	return b.String()
+}
+
+func parseStats(rec golibvirt.DomainStatsRecord) DomainStats {
+	s := DomainStats{Name: rec.Dom.Name, State: StateUnknown}
+	for _, p := range rec.Params {
+		v := tpUint64(p.Value)
+		switch {
+		case p.Field == "state.state":
+			s.State = mapState(int32(v))
+		case p.Field == "cpu.time":
+			s.CPUTimeNs = v
+		case p.Field == "balloon.current":
+			s.MemBalloonKiB = v
+		case p.Field == "balloon.rss":
+			s.MemRSSKiB = v
+		case strings.HasPrefix(p.Field, "net.") && strings.HasSuffix(p.Field, ".rx.bytes"):
+			s.NetRxBytes += v
+		case strings.HasPrefix(p.Field, "net.") && strings.HasSuffix(p.Field, ".tx.bytes"):
+			s.NetTxBytes += v
+		case strings.HasPrefix(p.Field, "block.") && strings.HasSuffix(p.Field, ".rd.bytes"):
+			s.BlockRdBytes += v
+		case strings.HasPrefix(p.Field, "block.") && strings.HasSuffix(p.Field, ".wr.bytes"):
+			s.BlockWrBytes += v
+		case strings.HasPrefix(p.Field, "block.") && strings.HasSuffix(p.Field, ".allocation"):
+			s.BlockAllocation += v
+		case strings.HasPrefix(p.Field, "block.") && strings.HasSuffix(p.Field, ".capacity"):
+			s.BlockCapacity += v
+		}
+	}
+	return s
+}
+
+func tpUint64(v golibvirt.TypedParamValue) uint64 {
+	switch n := v.I.(type) {
+	case int:
+		if n < 0 {
+			return 0
+		}
+		return uint64(n)
+	case int32:
+		if n < 0 {
+			return 0
+		}
+		return uint64(n)
+	case int64:
+		if n < 0 {
+			return 0
+		}
+		return uint64(n)
+	case uint:
+		return uint64(n)
+	case uint32:
+		return uint64(n)
+	case uint64:
+		return n
+	case float64:
+		if n < 0 {
+			return 0
+		}
+		return uint64(n)
+	default:
+		return 0
+	}
+}
+
+func isLibvirtErr(err error, code golibvirt.ErrorNumber) bool {
+	var e golibvirt.Error
+	if errors.As(err, &e) {
+		return e.Code == uint32(code)
+	}
+	return false
+}

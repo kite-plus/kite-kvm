@@ -15,6 +15,7 @@ import (
 
 	"github.com/kite-plus/kite-kvm/internal/api"
 	"github.com/kite-plus/kite-kvm/internal/config"
+	"github.com/kite-plus/kite-kvm/internal/libvirt"
 )
 
 // version is injected at build time via -ldflags "-X main.version=...".
@@ -47,12 +48,18 @@ func run(configPath string, logger *slog.Logger) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	conn := libvirt.New(cfg.Libvirt.URI)
+	if err := conn.Connect(ctx); err != nil {
+		// Non-fatal: start anyway and let /readyz report the outage.
+		logger.Warn("libvirt connect failed at startup; /readyz will report unavailable",
+			"uri", cfg.Libvirt.URI, "error", err)
+	}
+	defer func() { _ = conn.Close() }()
+
 	router := api.NewRouter(api.Options{
 		Logger: logger,
 		Auth:   cfg.Auth,
-		// Readiness is wired to a real libvirt connectivity check once the
-		// libvirt client is introduced.
-		Ready: func(context.Context) error { return nil },
+		Ready:  conn.Ping,
 	})
 
 	srv := api.NewServer(cfg.Server, router, logger)
