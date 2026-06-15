@@ -87,6 +87,7 @@ type Conn interface {
 	// Storage.
 	CreateVolume(ctx context.Context, spec StorageVolSpec) (path string, err error)
 	DeleteVolume(ctx context.Context, pool, name string) error
+	ResizeVolume(ctx context.Context, pool, name string, capacityBytes uint64) error
 
 	// Bulk stats (for billing / info).
 	AllDomainStats(ctx context.Context) ([]DomainStats, error)

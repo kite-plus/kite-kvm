@@ -233,6 +233,22 @@ func (c *libvirtConn) DeleteVolume(ctx context.Context, pool, name string) error
 	return l.StorageVolDelete(vol, 0)
 }
 
+func (c *libvirtConn) ResizeVolume(ctx context.Context, pool, name string, capacityBytes uint64) error {
+	l, err := c.ensure(ctx)
+	if err != nil {
+		return err
+	}
+	p, err := l.StoragePoolLookupByName(pool)
+	if err != nil {
+		return fmt.Errorf("lookup pool %q: %w", pool, err)
+	}
+	vol, err := l.StorageVolLookupByName(p, name)
+	if err != nil {
+		return fmt.Errorf("lookup volume %q: %w", name, err)
+	}
+	return l.StorageVolResize(vol, capacityBytes, 0)
+}
+
 func (c *libvirtConn) AllDomainStats(ctx context.Context) ([]DomainStats, error) {
 	l, err := c.ensure(ctx)
 	if err != nil {

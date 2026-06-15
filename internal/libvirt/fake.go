@@ -152,6 +152,15 @@ func (f *Fake) DeleteVolume(_ context.Context, pool, name string) error {
 	return nil
 }
 
+func (f *Fake) ResizeVolume(_ context.Context, pool, name string, _ uint64) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if _, ok := f.volumes[pool+"/"+name]; !ok {
+		return fmt.Errorf("libvirt fake: volume %s/%s not found", pool, name)
+	}
+	return nil
+}
+
 func (f *Fake) AllDomainStats(context.Context) ([]DomainStats, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()

@@ -36,7 +36,10 @@ func testService(t *testing.T) (*Service, *libvirt.Fake, store.Store) {
 			{ID: "nat-default", Mode: config.NetworkModeNAT, Default: true, LibvirtNetwork: "default", Subnet: "192.168.122.0/24"},
 			{ID: "public-1", Mode: config.NetworkModeBridge, Bridge: "br0", Gateway: "203.0.113.1", Netmask: "255.255.255.0", IPPool: []string{"203.0.113.10", "203.0.113.11"}},
 		},
-		Flavors: []config.Flavor{{ID: "s1.small", Name: "Small", VCPUs: 1, MemoryMB: 1024, DiskGB: 20, BandwidthMbps: 100}},
+		Flavors: []config.Flavor{
+			{ID: "s1.small", Name: "Small", VCPUs: 1, MemoryMB: 1024, DiskGB: 20, BandwidthMbps: 100},
+			{ID: "s1.large", Name: "Large", VCPUs: 4, MemoryMB: 4096, DiskGB: 40, BandwidthMbps: 400},
+		},
 		Images:  []config.Image{{ID: "ubuntu-22.04", Name: "Ubuntu", OSVariant: "ubuntu22.04", BasePath: "/base/jammy.img", DefaultUser: "ubuntu"}},
 	}
 	netmgr, err := network.NewManager(cfg, st, conn)
@@ -449,6 +452,40 @@ func TestRebuild(t *testing.T) {
 
 	if _, err := svc.Rebuild(ctx, rec.ID, RebuildRequest{ImageID: "ghost"}); !errors.Is(err, ErrImageNotFound) {
 		t.Errorf("rebuild unknown image = %v, want ErrImageNotFound", err)
+	}
+}
+
+func TestResize(t *testing.T) {
+	svc, conn, st := testService(t)
+	ctx := context.Background()
+
+	cj, _ := svc.Create(ctx, CreateRequest{FlavorID: "s1.small", ImageID: "ubuntu-22.04"})
+	rec := waitVM(t, st, cj.VMID)
+
+	j, err := svc.Resize(ctx, rec.ID, ResizeRequest{FlavorID: "s1.large"})
+	if err != nil {
+		t.Fatalf("Resize: %v", err)
+	}
+	if done := waitJob(t, st, j.ID); done.State != model.JobSucceeded {
+		t.Fatalf("resize job %s: %s", done.State, done.Error)
+	}
+	got, _ := st.GetVM(ctx, rec.ID)
+	if got.FlavorID != "s1.large" || got.VCPUs != 4 || got.MemoryMB != 4096 || got.DiskGB != 40 {
+		t.Errorf("resize not applied: %+v", got)
+	}
+	if got.Status != model.VMStatusRunning {
+		t.Errorf("status = %s, want running (was running before resize)", got.Status)
+	}
+	if state, _ := conn.DomainState(ctx, rec.DomainName); state != libvirt.StateRunning {
+		t.Errorf("domain = %v, want running", state)
+	}
+
+	// Shrinking the disk is rejected.
+	if _, err := svc.Resize(ctx, rec.ID, ResizeRequest{FlavorID: "s1.small"}); !errors.Is(err, ErrInvalidRequest) {
+		t.Errorf("disk shrink = %v, want ErrInvalidRequest", err)
+	}
+	if _, err := svc.Resize(ctx, rec.ID, ResizeRequest{FlavorID: "ghost"}); !errors.Is(err, ErrFlavorNotFound) {
+		t.Errorf("unknown flavor = %v, want ErrFlavorNotFound", err)
 	}
 }
 

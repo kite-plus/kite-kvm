@@ -126,6 +126,13 @@ func (s *Service) runReseed(ctx context.Context, vmID string) error {
 	if err != nil {
 		return err
 	}
+	return s.reseedVM(ctx, v)
+}
+
+// reseedVM rebuilds the cloud-init seed ISO from a VM record with a fresh
+// instance-id so cloud-init re-applies (hostname, password, network, growpart)
+// on the next boot.
+func (s *Service) reseedVM(ctx context.Context, v *model.VM) error {
 	image, ok := s.catalog.Image(v.ImageID)
 	if !ok {
 		return fmt.Errorf("image %q no longer configured", v.ImageID)
@@ -133,9 +140,7 @@ func (s *Service) runReseed(ctx context.Context, vmID string) error {
 	if v.SeedPath == "" {
 		return fmt.Errorf("vm %s has no seed to update", v.ID)
 	}
-
 	ci := provision.CloudInit{
-		// Bump the instance-id so cloud-init re-applies on next boot.
 		InstanceID:  v.ID + "-" + uuid.NewString()[:8],
 		Hostname:    v.Hostname,
 		DefaultUser: image.DefaultUser,

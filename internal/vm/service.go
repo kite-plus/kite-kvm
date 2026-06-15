@@ -217,6 +217,8 @@ func (s *Service) RunJob(ctx context.Context, j *model.Job) error {
 		return s.runReseed(ctx, j.VMID)
 	case model.JobRebuild:
 		return s.runRebuild(ctx, j.VMID)
+	case model.JobResize:
+		return s.runResize(ctx, j.VMID)
 	default:
 		return fmt.Errorf("unsupported job type %q", j.Type)
 	}
