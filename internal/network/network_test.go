@@ -92,12 +92,3 @@ func TestUnknownNetwork(t *testing.T) {
 	}
 }
 
-func TestBridgeModeRejectedForNow(t *testing.T) {
-	cfg := &config.Config{Networks: []config.Network{{
-		ID: "public-1", Mode: config.NetworkModeBridge, Bridge: "br0",
-		Gateway: "203.0.113.1", IPPool: []string{"203.0.113.10"},
-	}}}
-	if _, err := NewManager(cfg, nil, nil); err == nil {
-		t.Error("expected bridge mode to be unsupported until C12")
-	}
-}

@@ -57,6 +57,8 @@ func NewManager(cfg *config.Config, st store.Store, conn libvirt.Conn) (*Manager
 		switch n.Mode {
 		case config.NetworkModeNAT:
 			m.strategies[n.ID] = newNATStrategy(n, st, conn)
+		case config.NetworkModeBridge:
+			m.strategies[n.ID] = newBridgeStrategy(n, st)
 		default:
 			return nil, fmt.Errorf("network %q: unsupported mode %q", n.ID, n.Mode)
 		}
