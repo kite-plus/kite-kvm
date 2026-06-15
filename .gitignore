@@ -1,0 +1,21 @@
+# build artifacts
+/bin/
+
+# test / coverage output
+*.out
+*.test
+
+# local runtime state (sqlite, generated disks/seeds)
+*.db
+*.db-shm
+*.db-wal
+*.iso
+*.qcow2
+
+# local-only config overrides
+/configs/*.local.yaml
+
+# editor / OS
+.DS_Store
+.idea/
+.vscode/
