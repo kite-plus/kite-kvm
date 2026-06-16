@@ -22,6 +22,12 @@ type RebuildRequest struct {
 // data on it is lost. Optional fields override the image, password, and SSH
 // keys; otherwise the current values are reused.
 func (s *Service) Rebuild(ctx context.Context, id string, req RebuildRequest) (*model.Job, error) {
+	if err := validatePassword(req.Password); err != nil {
+		return nil, err
+	}
+	if err := validateSSHKeys(req.SSHKeys); err != nil {
+		return nil, err
+	}
 	v, err := s.loadOperable(ctx, id)
 	if err != nil {
 		return nil, err

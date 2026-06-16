@@ -22,7 +22,7 @@ func TestUserData(t *testing.T) {
 	ud := ci.userData()
 	for _, want := range []string{
 		"#cloud-config",
-		"hostname: web1",
+		`hostname: "web1"`,
 		"ssh_pwauth: true",
 		"  - name: ubuntu",
 		"ssh_authorized_keys:",
@@ -36,7 +36,7 @@ func TestUserData(t *testing.T) {
 	}
 
 	md := ci.metaData()
-	if !strings.Contains(md, "instance-id: vm1") || !strings.Contains(md, "local-hostname: web1") {
+	if !strings.Contains(md, `instance-id: "vm1"`) || !strings.Contains(md, `local-hostname: "web1"`) {
 		t.Errorf("meta-data wrong: %s", md)
 	}
 }

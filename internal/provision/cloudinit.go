@@ -37,7 +37,7 @@ func (ci CloudInit) Files() []SeedFile {
 }
 
 func (ci CloudInit) metaData() string {
-	return fmt.Sprintf("instance-id: %s\nlocal-hostname: %s\n", ci.InstanceID, ci.Hostname)
+	return fmt.Sprintf("instance-id: %s\nlocal-hostname: %s\n", yamlQuote(ci.InstanceID), yamlQuote(ci.Hostname))
 }
 
 func (ci CloudInit) userData() string {
@@ -48,8 +48,8 @@ func (ci CloudInit) userData() string {
 
 	var b strings.Builder
 	b.WriteString("#cloud-config\n")
-	fmt.Fprintf(&b, "hostname: %s\n", ci.Hostname)
-	fmt.Fprintf(&b, "fqdn: %s\n", ci.Hostname)
+	fmt.Fprintf(&b, "hostname: %s\n", yamlQuote(ci.Hostname))
+	fmt.Fprintf(&b, "fqdn: %s\n", yamlQuote(ci.Hostname))
 	b.WriteString("manage_etc_hosts: true\n")
 	b.WriteString("preserve_hostname: false\n")
 	fmt.Fprintf(&b, "ssh_pwauth: %t\n", ci.Password != "")
@@ -114,10 +114,35 @@ func (nc NetworkConfig) render() string {
 	return b.String()
 }
 
+// yamlQuote renders s as a YAML double-quoted scalar, escaping backslash, quote,
+// and all control characters. This is a hard guarantee that an input value
+// cannot break out of its scalar and inject cloud-config keys, regardless of
+// upstream validation.
 func yamlQuote(s string) string {
-	s = strings.ReplaceAll(s, `\`, `\\`)
-	s = strings.ReplaceAll(s, `"`, `\"`)
-	return `"` + s + `"`
+	var b strings.Builder
+	b.WriteByte('"')
+	for _, r := range s {
+		switch r {
+		case '\\':
+			b.WriteString(`\\`)
+		case '"':
+			b.WriteString(`\"`)
+		case '\n':
+			b.WriteString(`\n`)
+		case '\r':
+			b.WriteString(`\r`)
+		case '\t':
+			b.WriteString(`\t`)
+		default:
+			if r < 0x20 || r == 0x7f {
+				fmt.Fprintf(&b, `\x%02x`, r)
+			} else {
+				b.WriteRune(r)
+			}
+		}
+	}
+	b.WriteByte('"')
+	return b.String()
 }
 
 func quoteAll(ss []string) []string {

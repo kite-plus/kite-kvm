@@ -89,10 +89,19 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (*model.Job, er
 		return nil, err
 	}
 
+	if err := validatePassword(req.Password); err != nil {
+		return nil, err
+	}
+	if err := validateSSHKeys(req.SSHKeys); err != nil {
+		return nil, err
+	}
+
 	id := uuid.NewString()
 	hostname := strings.TrimSpace(req.Hostname)
 	if hostname == "" {
 		hostname = "vm-" + id[:8]
+	} else if err := validateHostname(hostname); err != nil {
+		return nil, err
 	}
 
 	quotaGB := flavor.TrafficQuotaGB

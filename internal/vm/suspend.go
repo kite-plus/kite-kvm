@@ -32,6 +32,9 @@ func (s *Service) PasswordReset(ctx context.Context, id, password string) (*mode
 	if password == "" {
 		return nil, fmt.Errorf("%w: password is required", ErrInvalidRequest)
 	}
+	if err := validatePassword(password); err != nil {
+		return nil, err
+	}
 	v, err := s.loadOperable(ctx, id)
 	if err != nil {
 		return nil, err
@@ -47,8 +50,8 @@ func (s *Service) PasswordReset(ctx context.Context, id, password string) (*mode
 // the cloud-init seed; the change applies on the next boot.
 func (s *Service) SetHostname(ctx context.Context, id, hostname string) (*model.Job, error) {
 	hostname = strings.TrimSpace(hostname)
-	if hostname == "" {
-		return nil, fmt.Errorf("%w: hostname is required", ErrInvalidRequest)
+	if err := validateHostname(hostname); err != nil {
+		return nil, err
 	}
 	v, err := s.loadOperable(ctx, id)
 	if err != nil {

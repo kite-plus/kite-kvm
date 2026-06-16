@@ -80,7 +80,7 @@ func TestCreateNAT(t *testing.T) {
 		ImageID:  "ubuntu-22.04",
 		Hostname: "web1",
 		Password: "secret",
-		SSHKeys:  []string{"ssh-ed25519 AAAA"},
+		SSHKeys:  []string{testSSHKey},
 	})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
