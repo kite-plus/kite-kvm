@@ -1,8 +1,9 @@
 # kite-kvm REST API
 
-> Machine-readable contract: [openapi.yaml](openapi.yaml) (OpenAPI 3.1). Use it to
-> generate clients or import into Swagger UI / Postman. This page is the prose
-> companion.
+> Machine-readable contract: [openapi.yaml](openapi.yaml) (OpenAPI 3.1) — use it to
+> generate clients or import into Swagger UI / Postman. A rendered, browsable
+> version is [api.html](api.html) (open in a browser; regenerate with `make docs`).
+> This page is the prose companion.
 
 All endpoints are under `/v1` and require:
 

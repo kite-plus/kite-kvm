@@ -6,7 +6,7 @@ VERSION     ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo 
 LDFLAGS     := -s -w -X main.version=$(VERSION)
 GOARCH      ?= amd64
 
-.PHONY: all build build-linux run test vet fmt tidy clean
+.PHONY: all build build-linux run test vet fmt tidy docs clean
 
 all: build
 
@@ -38,6 +38,10 @@ fmt:
 ## tidy: tidy go.mod/go.sum
 tidy:
 	go mod tidy
+
+## docs: render the OpenAPI spec to a self-contained HTML (needs node/npx)
+docs:
+	npx --yes redoc-cli@0.13.21 bundle docs/openapi.yaml -o docs/api.html
 
 ## clean: remove build artifacts
 clean:
