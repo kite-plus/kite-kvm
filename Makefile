@@ -6,7 +6,7 @@ VERSION     ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo 
 LDFLAGS     := -s -w -X main.version=$(VERSION)
 GOARCH      ?= amd64
 
-.PHONY: all build build-linux run test vet fmt tidy docs clean
+.PHONY: all build build-linux run test vet fmt tidy docs tls-dev clean
 
 all: build
 
@@ -42,6 +42,10 @@ tidy:
 ## docs: render the OpenAPI spec to a self-contained HTML (needs node/npx)
 docs:
 	npx --yes redoc-cli@0.13.21 bundle docs/openapi.yaml -o docs/api.html
+
+## tls-dev: generate a local self-signed TLS cert under ./tls-dev (needs openssl)
+tls-dev:
+	./deploy/tls/gen-self-signed.sh ./tls-dev
 
 ## clean: remove build artifacts
 clean:

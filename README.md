@@ -91,13 +91,17 @@ Prerequisites:
 - TLS certificate/key and a bearer token for the API.
 
 ```bash
-make build-linux
-sudo install bin/kite-kvm-linux-amd64 /usr/local/bin/kite-kvm
-sudo install -D configs/kite-kvm.example.yaml /etc/kite-kvm/kite-kvm.yaml   # edit
-sudo install -D deploy/kite-kvm.service /etc/systemd/system/kite-kvm.service
-sudo useradd -r -g libvirt kite-kvm
-sudo systemctl enable --now kite-kvm
+make build-linux                 # static binary -> bin/kite-kvm-linux-amd64
+sudo ./deploy/install.sh         # binary, config, TLS, systemd unit, user, host bootstrap
+sudoedit /etc/kite-kvm/kite-kvm.yaml   # set auth.tokens
+sudo ./deploy/fetch-images.sh    # download golden cloud images
+sudo systemctl start kite-kvm
 ```
+
+`deploy/install.sh` is idempotent and also generates a self-signed TLS cert and
+bootstraps the libvirt storage pool + NAT network. For public-IP (bridge) mode
+and the full install/upgrade/backup guide, see [docs/deploy.md](docs/deploy.md)
+and [deploy/networks/README.md](deploy/networks/README.md).
 
 ## API
 
