@@ -24,6 +24,9 @@ type CreateRequest struct {
 	Password string         `json:"password,omitempty"`
 	SSHKeys  []string       `json:"ssh_keys,omitempty"`
 	Network  NetworkRequest `json:"network,omitempty"`
+	// TrafficQuotaGB overrides the flavor's default combined in+out transfer
+	// cap. nil = use the flavor default; a pointer to 0 = unlimited.
+	TrafficQuotaGB *int `json:"traffic_quota_gb,omitempty"`
 }
 
 // NetworkRequest selects the network for a new VM. An explicit network_id wins;

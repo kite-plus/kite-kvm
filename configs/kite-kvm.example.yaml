@@ -31,6 +31,10 @@ storage:
   # Local agent state (VM mapping, jobs, idempotency keys, IP allocations).
   state_path: "/var/lib/kite-kvm/state.db"
 
+traffic:
+  # How often per-VM transfer is sampled and quotas enforced (seconds).
+  interval_seconds: 60
+
 networks:
   # NAT network: VMs get a private 192.168.122.x lease pinned by MAC.
   - id: "nat-default"
@@ -60,12 +64,14 @@ flavors:
     memory_mb: 1024
     disk_gb: 20
     bandwidth_mbps: 100
+    traffic_quota_gb: 1024   # 1 TB combined in+out, 0 = unlimited
   - id: "s1.medium"
     name: "Medium"
     vcpus: 2
     memory_mb: 2048
     disk_gb: 40
     bandwidth_mbps: 200
+    traffic_quota_gb: 2048   # 2 TB
 
 images:
   - id: "ubuntu-22.04"

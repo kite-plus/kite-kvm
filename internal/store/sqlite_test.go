@@ -86,6 +86,38 @@ func TestVMCRUD(t *testing.T) {
 	}
 }
 
+func TestVMTrafficRoundTrip(t *testing.T) {
+	st := newTestStore(t)
+	ctx := context.Background()
+
+	vm := sampleVM("tvm")
+	vm.TrafficQuotaBytes = 2 * 1024 * 1024 * 1024 * 1024 // 2 TB
+	vm.TrafficUsedBytes = 1500 * 1024 * 1024 * 1024      // 1.5 TB
+	vm.NetworkBlocked = false
+	if err := st.CreateVM(ctx, vm); err != nil {
+		t.Fatalf("CreateVM: %v", err)
+	}
+
+	got, _ := st.GetVM(ctx, "tvm")
+	if got.TrafficQuotaBytes != vm.TrafficQuotaBytes || got.TrafficUsedBytes != vm.TrafficUsedBytes {
+		t.Errorf("traffic not round-tripped: quota=%d used=%d", got.TrafficQuotaBytes, got.TrafficUsedBytes)
+	}
+
+	got.TrafficUsedBytes = got.TrafficQuotaBytes
+	got.NetworkBlocked = true
+	got.NetworkBlockReason = "quota"
+	if err := st.UpdateVM(ctx, got); err != nil {
+		t.Fatalf("UpdateVM: %v", err)
+	}
+	reread, _ := st.GetVM(ctx, "tvm")
+	if !reread.NetworkBlocked || reread.NetworkBlockReason != "quota" {
+		t.Errorf("block state not persisted: %+v", reread)
+	}
+	if reread.TrafficUsedBytes != vm.TrafficQuotaBytes {
+		t.Errorf("used not persisted: %d", reread.TrafficUsedBytes)
+	}
+}
+
 func TestVMDuplicateConflict(t *testing.T) {
 	st := newTestStore(t)
 	ctx := context.Background()

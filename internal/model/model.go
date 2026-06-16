@@ -60,8 +60,19 @@ type VM struct {
 	SeedPath       string      `json:"-"`
 	// Password is the initial cloud-init password. Persisted for the async
 	// provisioning/password jobs; never serialized to clients.
-	Password  string    `json:"-"`
-	SSHKeys   []string  `json:"ssh_keys,omitempty"`
+	Password string   `json:"-"`
+	SSHKeys  []string `json:"ssh_keys,omitempty"`
+
+	// Traffic accounting. Quota is the combined in+out byte cap for the current
+	// period (0 = unlimited); Used is the accumulated combined transfer.
+	TrafficQuotaBytes  uint64    `json:"traffic_quota_bytes"`
+	TrafficUsedBytes   uint64    `json:"traffic_used_bytes"`
+	TrafficPeriodStart time.Time `json:"traffic_period_start"`
+	// NetworkBlocked cuts the VM's NIC link; Reason is "quota" (auto) or
+	// "manual" (admin) so the accountant only auto-restores quota blocks.
+	NetworkBlocked     bool   `json:"network_blocked"`
+	NetworkBlockReason string `json:"network_block_reason,omitempty"`
+
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }

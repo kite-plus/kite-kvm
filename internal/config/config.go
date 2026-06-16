@@ -23,9 +23,16 @@ type Config struct {
 	Auth     Auth      `yaml:"auth"`
 	Libvirt  Libvirt   `yaml:"libvirt"`
 	Storage  Storage   `yaml:"storage"`
+	Traffic  Traffic   `yaml:"traffic"`
 	Networks []Network `yaml:"networks"`
 	Flavors  []Flavor  `yaml:"flavors"`
 	Images   []Image   `yaml:"images"`
+}
+
+// Traffic holds the traffic-accounting poller settings.
+type Traffic struct {
+	// IntervalSeconds is how often usage is sampled and quotas enforced.
+	IntervalSeconds int `yaml:"interval_seconds"`
 }
 
 // Server holds HTTP listener and TLS settings.
@@ -83,12 +90,13 @@ type Network struct {
 
 // Flavor is a sellable resource tier.
 type Flavor struct {
-	ID            string `yaml:"id"`
-	Name          string `yaml:"name"`
-	VCPUs         int    `yaml:"vcpus"`
-	MemoryMB      int    `yaml:"memory_mb"`
-	DiskGB        int    `yaml:"disk_gb"`
-	BandwidthMbps int    `yaml:"bandwidth_mbps"` // optional rate cap, 0 = unlimited
+	ID             string `yaml:"id"`
+	Name           string `yaml:"name"`
+	VCPUs          int    `yaml:"vcpus"`
+	MemoryMB       int    `yaml:"memory_mb"`
+	DiskGB         int    `yaml:"disk_gb"`
+	BandwidthMbps  int    `yaml:"bandwidth_mbps"`   // optional rate cap, 0 = unlimited
+	TrafficQuotaGB int    `yaml:"traffic_quota_gb"` // combined in+out transfer cap, 0 = unlimited
 }
 
 // Image is a base (golden) cloud image VMs are provisioned from.
@@ -164,6 +172,9 @@ func (c *Config) applyDefaults() {
 	}
 	if c.Storage.StatePath == "" {
 		c.Storage.StatePath = "/var/lib/kite-kvm/state.db"
+	}
+	if c.Traffic.IntervalSeconds <= 0 {
+		c.Traffic.IntervalSeconds = 60
 	}
 }
 
@@ -275,6 +286,9 @@ func (c *Config) validateFlavors() error {
 		}
 		if f.BandwidthMbps < 0 {
 			return fmt.Errorf("flavor %q: bandwidth_mbps must be >= 0", f.ID)
+		}
+		if f.TrafficQuotaGB < 0 {
+			return fmt.Errorf("flavor %q: traffic_quota_gb must be >= 0", f.ID)
 		}
 	}
 	return nil

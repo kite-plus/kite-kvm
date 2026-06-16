@@ -80,6 +80,13 @@ func parseTimePtr(ns sql.NullString) *time.Time {
 	return &t
 }
 
+func boolToInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
+}
+
 func marshalStrings(ss []string) string {
 	if len(ss) == 0 {
 		return "[]"
@@ -126,12 +133,16 @@ func (s *SQLiteStore) CreateVM(ctx context.Context, vm *model.VM) error {
         id, domain_name, domain_uuid, hostname, flavor_id, image_id,
         vcpus, memory_mb, disk_gb, network_id, network_mode, mac, ip,
         gateway, netmask, status, power_state, prev_power_state,
-        disk_path, seed_path, password, ssh_keys, created_at, updated_at
-    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        disk_path, seed_path, password, ssh_keys,
+        traffic_quota_bytes, traffic_used_bytes, traffic_period_start,
+        network_blocked, network_block_reason, created_at, updated_at
+    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		vm.ID, vm.DomainName, vm.DomainUUID, vm.Hostname, vm.FlavorID, vm.ImageID,
 		vm.VCPUs, vm.MemoryMB, vm.DiskGB, vm.NetworkID, string(vm.NetworkMode), vm.MAC, vm.IP,
 		vm.Gateway, vm.Netmask, string(vm.Status), string(vm.PowerState), string(vm.PrevPowerState),
-		vm.DiskPath, vm.SeedPath, vm.Password, marshalStrings(vm.SSHKeys), fmtTime(vm.CreatedAt), fmtTime(vm.UpdatedAt),
+		vm.DiskPath, vm.SeedPath, vm.Password, marshalStrings(vm.SSHKeys),
+		int64(vm.TrafficQuotaBytes), int64(vm.TrafficUsedBytes), fmtTime(vm.TrafficPeriodStart),
+		boolToInt(vm.NetworkBlocked), vm.NetworkBlockReason, fmtTime(vm.CreatedAt), fmtTime(vm.UpdatedAt),
 	)
 	if err != nil {
 		return mapConstraintErr(err)
@@ -142,19 +153,25 @@ func (s *SQLiteStore) CreateVM(ctx context.Context, vm *model.VM) error {
 const vmColumns = `id, domain_name, domain_uuid, hostname, flavor_id, image_id,
     vcpus, memory_mb, disk_gb, network_id, network_mode, mac, ip,
     gateway, netmask, status, power_state, prev_power_state,
-    disk_path, seed_path, password, ssh_keys, created_at, updated_at`
+    disk_path, seed_path, password, ssh_keys,
+    traffic_quota_bytes, traffic_used_bytes, traffic_period_start,
+    network_blocked, network_block_reason, created_at, updated_at`
 
 func scanVM(sc interface{ Scan(...any) error }) (*model.VM, error) {
 	var (
 		vm                            model.VM
 		mode, status, power, prevPow  string
 		sshKeys, createdAt, updatedAt string
+		quota, used                   int64
+		periodStart, blockReason      string
+		blocked                       int64
 	)
 	if err := sc.Scan(
 		&vm.ID, &vm.DomainName, &vm.DomainUUID, &vm.Hostname, &vm.FlavorID, &vm.ImageID,
 		&vm.VCPUs, &vm.MemoryMB, &vm.DiskGB, &vm.NetworkID, &mode, &vm.MAC, &vm.IP,
 		&vm.Gateway, &vm.Netmask, &status, &power, &prevPow,
-		&vm.DiskPath, &vm.SeedPath, &vm.Password, &sshKeys, &createdAt, &updatedAt,
+		&vm.DiskPath, &vm.SeedPath, &vm.Password, &sshKeys,
+		&quota, &used, &periodStart, &blocked, &blockReason, &createdAt, &updatedAt,
 	); err != nil {
 		return nil, err
 	}
@@ -163,6 +180,11 @@ func scanVM(sc interface{ Scan(...any) error }) (*model.VM, error) {
 	vm.PowerState = model.PowerState(power)
 	vm.PrevPowerState = model.PowerState(prevPow)
 	vm.SSHKeys = unmarshalStrings(sshKeys)
+	vm.TrafficQuotaBytes = uint64(quota)
+	vm.TrafficUsedBytes = uint64(used)
+	vm.TrafficPeriodStart = parseTime(periodStart)
+	vm.NetworkBlocked = blocked != 0
+	vm.NetworkBlockReason = blockReason
 	vm.CreatedAt = parseTime(createdAt)
 	vm.UpdatedAt = parseTime(updatedAt)
 	return &vm, nil
@@ -200,12 +222,16 @@ func (s *SQLiteStore) UpdateVM(ctx context.Context, vm *model.VM) error {
         domain_name=?, domain_uuid=?, hostname=?, flavor_id=?, image_id=?,
         vcpus=?, memory_mb=?, disk_gb=?, network_id=?, network_mode=?, mac=?, ip=?,
         gateway=?, netmask=?, status=?, power_state=?, prev_power_state=?,
-        disk_path=?, seed_path=?, password=?, ssh_keys=?, updated_at=?
+        disk_path=?, seed_path=?, password=?, ssh_keys=?,
+        traffic_quota_bytes=?, traffic_used_bytes=?, traffic_period_start=?,
+        network_blocked=?, network_block_reason=?, updated_at=?
         WHERE id=?`,
 		vm.DomainName, vm.DomainUUID, vm.Hostname, vm.FlavorID, vm.ImageID,
 		vm.VCPUs, vm.MemoryMB, vm.DiskGB, vm.NetworkID, string(vm.NetworkMode), vm.MAC, vm.IP,
 		vm.Gateway, vm.Netmask, string(vm.Status), string(vm.PowerState), string(vm.PrevPowerState),
-		vm.DiskPath, vm.SeedPath, vm.Password, marshalStrings(vm.SSHKeys), fmtTime(vm.UpdatedAt),
+		vm.DiskPath, vm.SeedPath, vm.Password, marshalStrings(vm.SSHKeys),
+		int64(vm.TrafficQuotaBytes), int64(vm.TrafficUsedBytes), fmtTime(vm.TrafficPeriodStart),
+		boolToInt(vm.NetworkBlocked), vm.NetworkBlockReason, fmtTime(vm.UpdatedAt),
 		vm.ID,
 	)
 	if err != nil {
