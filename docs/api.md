@@ -132,6 +132,15 @@ authenticated solely by this token (browsers cannot send a bearer header), so it
 sits outside the bearer/allowlist middleware; the VM's VNC stays bound to
 `127.0.0.1` and is only reachable through this proxy.
 
+## Host
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/v1/host` | Host capacity + commitments: CPU cores, total/free memory, storage, and the vCPU/RAM/disk committed to non-terminated VMs. For schedulers/panels. |
+
+Create is admission-controlled when `capacity` limits are configured: a request
+that would exceed the host's memory/vCPU/VM caps is rejected with `409`.
+
 ## Snapshots
 
 | Method | Path | Description |

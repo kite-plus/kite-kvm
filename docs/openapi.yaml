@@ -38,6 +38,7 @@ tags:
   - name: Console
   - name: Catalog
   - name: Jobs
+  - name: Host
   - name: Health
 
 paths:
@@ -79,6 +80,21 @@ paths:
                 properties:
                   status: { type: string, example: unavailable }
                   error: { type: string }
+
+  /v1/host:
+    get:
+      tags: [Host]
+      summary: Host capacity and current commitments
+      description: Physical CPU/memory/storage from libvirt plus resources committed to non-terminated VMs. For schedulers and panels.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HostReport" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "500": { $ref: "#/components/responses/Internal" }
 
   /v1/flavors:
     get:
@@ -773,6 +789,35 @@ components:
         network_block_reason: { type: string, enum: [quota, manual] }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
+
+    HostReport:
+      type: object
+      required:
+        - hostname
+        - libvirt_version
+        - cpu_cores
+        - committed_vcpus
+        - memory_total_mb
+        - memory_free_mb
+        - committed_memory_mb
+        - storage_total_gb
+        - storage_free_gb
+        - committed_disk_gb
+        - vm_count
+        - running_count
+      properties:
+        hostname: { type: string }
+        libvirt_version: { type: string }
+        cpu_cores: { type: integer }
+        committed_vcpus: { type: integer }
+        memory_total_mb: { type: integer, format: int64 }
+        memory_free_mb: { type: integer, format: int64 }
+        committed_memory_mb: { type: integer, format: int64 }
+        storage_total_gb: { type: integer, format: int64 }
+        storage_free_gb: { type: integer, format: int64 }
+        committed_disk_gb: { type: integer, format: int64 }
+        vm_count: { type: integer }
+        running_count: { type: integer }
 
     StatusInfo:
       type: object

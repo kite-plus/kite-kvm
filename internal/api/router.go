@@ -64,6 +64,7 @@ func NewRouter(opts Options) http.Handler {
 		r.Use(ipAllowlist(opts.Auth.IPAllowlist, logger))
 		r.Use(bearerAuth(opts.Auth.Tokens))
 
+		r.Get("/host", vms.host)
 		r.Get("/flavors", cat.listFlavors)
 		r.Get("/images", cat.listImages)
 		r.Get("/jobs/{id}", jobs.get)

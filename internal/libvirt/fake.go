@@ -60,6 +60,18 @@ func (f *Fake) Close() error                  { return nil }
 
 func (f *Fake) Ping(context.Context) error { return f.PingErr }
 
+func (f *Fake) HostInfo(context.Context, string) (HostInfo, error) {
+	return HostInfo{
+		Hostname:         "fake-host",
+		CPUs:             8,
+		MemoryTotalBytes: 16 << 30,
+		MemoryFreeBytes:  8 << 30,
+		StorageBytes:     500 << 30,
+		StorageFreeBytes: 400 << 30,
+		LibvirtVersion:   "0.0.0",
+	}, nil
+}
+
 func (f *Fake) DefineDomain(_ context.Context, xml string) (string, error) {
 	name, err := domainNameFromXML(xml)
 	if err != nil {

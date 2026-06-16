@@ -52,6 +52,17 @@ type DomainStats struct {
 	BlockCapacity   uint64
 }
 
+// HostInfo describes the hypervisor host's physical capacity.
+type HostInfo struct {
+	Hostname         string
+	CPUs             int    // total physical CPUs
+	MemoryTotalBytes uint64
+	MemoryFreeBytes  uint64
+	StorageBytes     uint64 // configured storage pool capacity
+	StorageFreeBytes uint64 // configured storage pool available
+	LibvirtVersion   string // e.g. "10.0.0"
+}
+
 // SnapshotInfo describes a domain snapshot.
 type SnapshotInfo struct {
 	Name         string    `json:"name"`
@@ -77,6 +88,10 @@ type Conn interface {
 	Connect(ctx context.Context) error
 	Close() error
 	Ping(ctx context.Context) error // backs /readyz
+
+	// HostInfo returns the host's physical capacity and the given storage pool's
+	// capacity/free bytes.
+	HostInfo(ctx context.Context, pool string) (HostInfo, error)
 
 	// Domain lifecycle (define persistent config, then start).
 	DefineDomain(ctx context.Context, xml string) (uuid string, err error)

@@ -437,6 +437,43 @@ func tpUint64(v golibvirt.TypedParamValue) uint64 {
 	}
 }
 
+func (c *libvirtConn) HostInfo(ctx context.Context, pool string) (HostInfo, error) {
+	l, err := c.ensure(ctx)
+	if err != nil {
+		return HostInfo{}, err
+	}
+	_, memKiB, cpus, _, _, _, _, _, err := l.NodeGetInfo()
+	if err != nil {
+		return HostInfo{}, fmt.Errorf("node info: %w", err)
+	}
+	info := HostInfo{
+		CPUs:             int(cpus),
+		MemoryTotalBytes: memKiB * 1024,
+	}
+	if free, err := l.NodeGetFreeMemory(); err == nil {
+		info.MemoryFreeBytes = free
+	}
+	if hn, err := l.ConnectGetHostname(); err == nil {
+		info.Hostname = hn
+	}
+	if ver, err := l.ConnectGetLibVersion(); err == nil {
+		info.LibvirtVersion = formatLibvirtVersion(ver)
+	}
+	if p, err := l.StoragePoolLookupByName(pool); err == nil {
+		if _, capacity, _, available, err := l.StoragePoolGetInfo(p); err == nil {
+			info.StorageBytes = capacity
+			info.StorageFreeBytes = available
+		}
+	}
+	return info, nil
+}
+
+// formatLibvirtVersion turns libvirt's packed version (major*1e6 + minor*1e3 +
+// release) into "major.minor.release".
+func formatLibvirtVersion(v uint64) string {
+	return fmt.Sprintf("%d.%d.%d", v/1000000, (v/1000)%1000, v%1000)
+}
+
 func (c *libvirtConn) CreateSnapshot(ctx context.Context, domain, name, description string) error {
 	l, dom, err := c.lookup(ctx, domain)
 	if err != nil {

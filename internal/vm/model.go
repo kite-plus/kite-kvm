@@ -7,13 +7,14 @@ import "errors"
 
 // Service-level sentinel errors. The API layer maps these to HTTP status codes.
 var (
-	ErrFlavorNotFound  = errors.New("flavor not found")
-	ErrImageNotFound   = errors.New("image not found")
-	ErrNetworkNotFound = errors.New("network not found")
-	ErrInvalidRequest  = errors.New("invalid request")
-	ErrVMNotFound      = errors.New("vm not found")
-	ErrVMTerminated    = errors.New("vm is terminated")
-	ErrVMNotRunning    = errors.New("vm is not running")
+	ErrFlavorNotFound       = errors.New("flavor not found")
+	ErrImageNotFound        = errors.New("image not found")
+	ErrNetworkNotFound      = errors.New("network not found")
+	ErrInvalidRequest       = errors.New("invalid request")
+	ErrVMNotFound           = errors.New("vm not found")
+	ErrVMTerminated         = errors.New("vm is terminated")
+	ErrVMNotRunning         = errors.New("vm is not running")
+	ErrInsufficientCapacity = errors.New("insufficient host capacity")
 )
 
 // CreateRequest is the body of POST /v1/vms.

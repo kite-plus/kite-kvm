@@ -95,6 +95,9 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (*model.Job, er
 	if err := validateSSHKeys(req.SSHKeys); err != nil {
 		return nil, err
 	}
+	if err := s.admit(ctx, flavor); err != nil {
+		return nil, err
+	}
 
 	id := uuid.NewString()
 	hostname := strings.TrimSpace(req.Hostname)

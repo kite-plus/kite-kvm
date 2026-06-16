@@ -24,9 +24,19 @@ type Config struct {
 	Libvirt  Libvirt   `yaml:"libvirt"`
 	Storage  Storage   `yaml:"storage"`
 	Traffic  Traffic   `yaml:"traffic"`
+	Capacity Capacity  `yaml:"capacity"`
 	Networks []Network `yaml:"networks"`
 	Flavors  []Flavor  `yaml:"flavors"`
 	Images   []Image   `yaml:"images"`
+}
+
+// Capacity holds optional admission-control limits for VM creation. A zero value
+// means that dimension is unenforced.
+type Capacity struct {
+	CPUOvercommit    float64 `yaml:"cpu_overcommit"`     // max committed vCPUs = host cores * ratio; 0 = unlimited
+	MemOvercommit    float64 `yaml:"mem_overcommit"`     // max committed memory = (total - reserved) * ratio; 0 = unlimited
+	ReservedMemoryMB int     `yaml:"reserved_memory_mb"` // host memory reserved before applying mem_overcommit
+	MaxVMs           int     `yaml:"max_vms"`            // hard cap on non-terminated VMs; 0 = unlimited
 }
 
 // Traffic holds the traffic-accounting poller settings.
@@ -197,6 +207,11 @@ func (c *Config) Validate() error {
 		if err := validateCIDROrIP(entry); err != nil {
 			return fmt.Errorf("auth.ip_allowlist[%d]: %w", i, err)
 		}
+	}
+
+	if c.Capacity.CPUOvercommit < 0 || c.Capacity.MemOvercommit < 0 ||
+		c.Capacity.ReservedMemoryMB < 0 || c.Capacity.MaxVMs < 0 {
+		return fmt.Errorf("capacity values must be >= 0")
 	}
 
 	if err := c.validateNetworks(); err != nil {

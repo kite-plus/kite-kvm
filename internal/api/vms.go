@@ -110,6 +110,15 @@ func (h *vmsHandler) resize(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusAccepted, acceptedJob(j))
 }
 
+func (h *vmsHandler) host(w http.ResponseWriter, r *http.Request) {
+	report, err := h.service.HostReport(r.Context())
+	if err != nil {
+		writeError(w, mapVMError(err))
+		return
+	}
+	writeJSON(w, http.StatusOK, report)
+}
+
 func (h *vmsHandler) traffic(w http.ResponseWriter, r *http.Request) {
 	info, err := h.service.TrafficUsage(r.Context(), chi.URLParam(r, "id"))
 	if err != nil {
@@ -269,6 +278,8 @@ func mapVMError(err error) error {
 	case errors.Is(err, vm.ErrVMTerminated):
 		return errConflict(err.Error())
 	case errors.Is(err, vm.ErrVMNotRunning):
+		return errConflict(err.Error())
+	case errors.Is(err, vm.ErrInsufficientCapacity):
 		return errConflict(err.Error())
 	case errors.Is(err, store.ErrNoIPAvailable):
 		return errConflict(err.Error())
