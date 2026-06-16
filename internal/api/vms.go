@@ -110,6 +110,32 @@ func (h *vmsHandler) resize(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusAccepted, acceptedJob(j))
 }
 
+func (h *vmsHandler) traffic(w http.ResponseWriter, r *http.Request) {
+	info, err := h.service.TrafficUsage(r.Context(), chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, mapVMError(err))
+		return
+	}
+	writeJSON(w, http.StatusOK, info)
+}
+
+func (h *vmsHandler) setTrafficQuota(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		QuotaGB int `json:"quota_gb"`
+	}
+	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxIdempotentBody))
+	if err := dec.Decode(&req); err != nil {
+		writeError(w, errBadRequest("invalid JSON body"))
+		return
+	}
+	info, err := h.service.SetTrafficQuota(r.Context(), chi.URLParam(r, "id"), req.QuotaGB)
+	if err != nil {
+		writeError(w, mapVMError(err))
+		return
+	}
+	writeJSON(w, http.StatusOK, info)
+}
+
 func (h *vmsHandler) listSnapshots(w http.ResponseWriter, r *http.Request) {
 	snaps, err := h.service.SnapshotList(r.Context(), chi.URLParam(r, "id"))
 	if err != nil {

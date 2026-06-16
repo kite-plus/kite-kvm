@@ -30,6 +30,8 @@ authenticated REST API so a billing system (WHMCS-style) or a custom panel can
 - Reconfigure: change hostname, rebuild from image, resize / change package.
 - Browser VNC console: single-use token + websocket proxy to the VM's VNC port.
 - Snapshots: create, list, delete, and revert (system checkpoints).
+- Traffic quota: per-VM combined in+out transfer cap with automatic full network
+  cutoff (NIC link down) on overage, plus manual block/unblock and period reset.
 - Live resource stats (CPU / memory / network / block) with interval rates.
 - Provisioning: thin qcow2 overlay off a golden cloud image + cloud-init NoCloud
   seed (hostname, users, password, SSH keys, network), built in pure Go.

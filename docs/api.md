@@ -135,6 +135,24 @@ sits outside the bearer/allowlist middleware; the VM's VNC stays bound to
 Create/delete/revert are async (`202` + job, `Idempotency-Key` required). A
 running VM's snapshot includes memory state (a system checkpoint).
 
+## Traffic quota
+
+Per-VM combined in+out transfer quota. A background poller samples usage every
+`traffic.interval_seconds`; when a VM crosses its quota its NIC link is cut
+(full network cutoff) and restored when it drops back under (e.g. after a reset
+or quota raise). The flavor sets the default quota; `traffic_quota_gb` on create
+or `PUT .../traffic` overrides it per VM (0 = unlimited).
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/v1/vms/{id}/traffic` | Usage view: `{quota_bytes, used_bytes, unlimited, percent, period_start, blocked, block_reason}`. |
+| PUT | `/v1/vms/{id}/traffic` | Set this VM's quota (`{"quota_gb": 2048}`; 0 = unlimited). Synchronous. |
+| POST | `/v1/vms/{id}/traffic/reset` | Zero usage, start a new period, restore network if quota-blocked. |
+| POST | `/v1/vms/{id}/traffic/block` | Manually cut the VM's network. |
+| POST | `/v1/vms/{id}/traffic/unblock` | Manually restore the VM's network. |
+
+reset/block/unblock are async (`202` + job, `Idempotency-Key` required).
+
 ## Jobs
 
 | Method | Path | Description |

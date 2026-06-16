@@ -74,6 +74,9 @@ func NewRouter(opts Options) http.Handler {
 			r.Get("/{id}/status", vms.status)
 			r.Get("/{id}/stats", vms.stats)
 			r.Get("/{id}/snapshots", vms.listSnapshots)
+			r.Get("/{id}/traffic", vms.traffic)
+			// Setting a VM's quota is a simple metadata update (no hypervisor op).
+			r.Put("/{id}/traffic", vms.setTrafficQuota)
 
 			// Console: mint a single-use token; the browser then connects to
 			// /console/ws/{token} (mounted above, token-authenticated).
@@ -97,6 +100,9 @@ func NewRouter(opts Options) http.Handler {
 				r.Post("/{id}/snapshots", vms.createSnapshot)
 				r.Delete("/{id}/snapshots/{snap}", vms.deleteSnapshot)
 				r.Post("/{id}/snapshots/{snap}/revert", vms.revertSnapshot)
+				r.Post("/{id}/traffic/reset", vms.powerOp(svc.ResetTraffic))
+				r.Post("/{id}/traffic/block", vms.powerOp(svc.BlockNetwork))
+				r.Post("/{id}/traffic/unblock", vms.powerOp(svc.UnblockNetwork))
 			})
 		})
 	})
