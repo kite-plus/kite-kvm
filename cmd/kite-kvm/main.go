@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
@@ -87,11 +88,19 @@ func run(configPath string, logger *slog.Logger) error {
 	defer queue.Stop()
 	vmService.ReconcileOnStart(ctx)
 
+	// Background loops are tracked so they drain before the store is closed.
+	var bg sync.WaitGroup
+	bg.Add(2)
 	// Periodically sample per-VM transfer and enforce traffic quotas.
-	go vmService.AccountTraffic(ctx, time.Duration(cfg.Traffic.IntervalSeconds)*time.Second)
-
+	go func() {
+		defer bg.Done()
+		vmService.AccountTraffic(ctx, time.Duration(cfg.Traffic.IntervalSeconds)*time.Second)
+	}()
 	// Periodically purge expired idempotency keys so the table stays bounded.
-	go sweepIdempotency(ctx, st, logger)
+	go func() {
+		defer bg.Done()
+		sweepIdempotency(ctx, st, logger)
+	}()
 
 	router := api.NewRouter(api.Options{
 		Logger:    logger,
@@ -108,7 +117,10 @@ func run(configPath string, logger *slog.Logger) error {
 		"addr", cfg.Server.Addr,
 		"insecure", cfg.Server.Insecure,
 	)
-	return srv.Run(ctx)
+	err = srv.Run(ctx)
+	// Drain the background loops before the deferred store.Close().
+	bg.Wait()
+	return err
 }
 
 // sweepIdempotency periodically removes expired idempotency keys so the table

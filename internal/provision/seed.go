@@ -72,5 +72,10 @@ func BuildSeedISO(path string, files []SeedFile) error {
 	}); err != nil {
 		return fmt.Errorf("finalize seed iso: %w", err)
 	}
+	// qemu opens the seed as libvirt-qemu (group kvm); make it group/world
+	// readable so the guest can mount the cidata volume at boot.
+	if err := os.Chmod(path, 0o644); err != nil {
+		return fmt.Errorf("chmod seed: %w", err)
+	}
 	return nil
 }

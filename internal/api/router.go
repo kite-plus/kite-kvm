@@ -5,6 +5,7 @@ package api
 import (
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -110,6 +111,16 @@ func NewRouter(opts Options) http.Handler {
 	return r
 }
 
+// redactPath hides the single-use console token from access logs so it never
+// leaks via logs/proxies.
+func redactPath(p string) string {
+	const prefix = "/console/ws/"
+	if strings.HasPrefix(p, prefix) {
+		return prefix + "<redacted>"
+	}
+	return p
+}
+
 // requestLogger logs one structured line per request using slog.
 func requestLogger(logger *slog.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
@@ -119,7 +130,7 @@ func requestLogger(logger *slog.Logger) func(http.Handler) http.Handler {
 			next.ServeHTTP(ww, r)
 			logger.Info("http request",
 				"method", r.Method,
-				"path", r.URL.Path,
+				"path", redactPath(r.URL.Path),
 				"status", ww.Status(),
 				"bytes", ww.BytesWritten(),
 				"duration_ms", time.Since(start).Milliseconds(),

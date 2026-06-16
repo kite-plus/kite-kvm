@@ -215,7 +215,9 @@ func (s *Service) AccountTraffic(ctx context.Context, interval time.Duration) {
 		case <-ctx.Done():
 			return
 		case <-t.C:
-			s.accountTick(ctx)
+			// Use a fresh context so a tick in progress when shutdown begins
+			// finishes its DB writes instead of being cancelled mid-loop.
+			s.accountTick(context.Background())
 		}
 	}
 }
