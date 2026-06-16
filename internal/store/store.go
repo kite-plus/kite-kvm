@@ -35,10 +35,12 @@ type Store interface {
 	UpdateJob(ctx context.Context, job *model.Job) error
 	ListJobsByState(ctx context.Context, state model.JobState) ([]*model.Job, error)
 
-	// Idempotency.
+	// Idempotency. GetIdempotency treats an expired record as absent.
 	GetIdempotency(ctx context.Context, key string) (*model.IdempotencyRecord, error)
 	PutIdempotency(ctx context.Context, rec *model.IdempotencyRecord) error
 	UpdateIdempotency(ctx context.Context, rec *model.IdempotencyRecord) error
+	DeleteIdempotency(ctx context.Context, key string) error
+	DeleteExpiredIdempotency(ctx context.Context) (int64, error)
 
 	// IP allocations. AllocateIP atomically claims the first candidate not
 	// already allocated within the network, making concurrent provisioning

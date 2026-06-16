@@ -349,7 +349,25 @@ func (s *SQLiteStore) GetIdempotency(ctx context.Context, key string) (*model.Id
 	rec.Response = response
 	rec.CreatedAt = parseTime(createdAt)
 	rec.ExpiresAt = parseTime(expiresAt)
+	// An expired record is treated as absent so the key becomes reusable and a
+	// stale stored response never replays past its TTL.
+	if time.Now().After(rec.ExpiresAt) {
+		return nil, ErrNotFound
+	}
 	return &rec, nil
+}
+
+func (s *SQLiteStore) DeleteIdempotency(ctx context.Context, key string) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM idempotency_keys WHERE key = ?`, key)
+	return err
+}
+
+func (s *SQLiteStore) DeleteExpiredIdempotency(ctx context.Context) (int64, error) {
+	res, err := s.db.ExecContext(ctx, `DELETE FROM idempotency_keys WHERE expires_at < ?`, fmtTime(time.Now().UTC()))
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
 }
 
 func (s *SQLiteStore) PutIdempotency(ctx context.Context, rec *model.IdempotencyRecord) error {

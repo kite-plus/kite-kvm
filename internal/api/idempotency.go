@@ -19,6 +19,11 @@ const idempotencyTTL = 24 * time.Hour
 // maxIdempotentBody bounds how much request body is read for hashing.
 const maxIdempotentBody = 1 << 20 // 1 MiB
 
+// staleClaimWindow is how long an in-progress claim may sit before it is treated
+// as abandoned (the original request crashed mid-flight) and the key reclaimed.
+// It matches the maximum job duration.
+const staleClaimWindow = 15 * time.Minute
+
 // idempotency enforces the Idempotency-Key header on mutating requests. The
 // first request with a key runs the handler and stores its response; retries
 // with the same key replay the stored response (a retried create never
@@ -52,8 +57,16 @@ func idempotency(st store.Store) func(http.Handler) http.Handler {
 					replay(w, existing)
 					return
 				}
-				writeError(w, errConflict("a request with this Idempotency-Key is already in progress"))
-				return
+				// In-progress claim with no stored response. If it is recent, a
+				// concurrent request holds it. If it is older than the stale
+				// window, the original request crashed before completing, so
+				// reclaim the key instead of wedging it forever.
+				if time.Since(existing.CreatedAt) <= staleClaimWindow {
+					writeError(w, errConflict("a request with this Idempotency-Key is already in progress"))
+					return
+				}
+				_ = st.DeleteIdempotency(r.Context(), key)
+				// fall through to re-claim below
 			case !errors.Is(err, store.ErrNotFound):
 				writeError(w, err)
 				return

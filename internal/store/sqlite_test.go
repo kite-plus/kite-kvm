@@ -118,6 +118,34 @@ func TestVMTrafficRoundTrip(t *testing.T) {
 	}
 }
 
+func TestIdempotencyExpiryAndSweep(t *testing.T) {
+	st := newTestStore(t)
+	ctx := context.Background()
+
+	if err := st.PutIdempotency(ctx, &model.IdempotencyRecord{
+		Key: "old", RequestHash: "h", ExpiresAt: time.Now().Add(-time.Minute),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.GetIdempotency(ctx, "old"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("expired key should read as absent, got %v", err)
+	}
+
+	if err := st.PutIdempotency(ctx, &model.IdempotencyRecord{
+		Key: "live", RequestHash: "h", ExpiresAt: time.Now().Add(time.Hour),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.GetIdempotency(ctx, "live"); err != nil {
+		t.Errorf("live key should be present, got %v", err)
+	}
+
+	n, err := st.DeleteExpiredIdempotency(ctx)
+	if err != nil || n != 1 {
+		t.Errorf("sweep removed %d (err %v), want 1", n, err)
+	}
+}
+
 func TestVMDuplicateConflict(t *testing.T) {
 	st := newTestStore(t)
 	ctx := context.Background()

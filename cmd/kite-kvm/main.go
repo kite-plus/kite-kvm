@@ -90,6 +90,9 @@ func run(configPath string, logger *slog.Logger) error {
 	// Periodically sample per-VM transfer and enforce traffic quotas.
 	go vmService.AccountTraffic(ctx, time.Duration(cfg.Traffic.IntervalSeconds)*time.Second)
 
+	// Periodically purge expired idempotency keys so the table stays bounded.
+	go sweepIdempotency(ctx, st, logger)
+
 	router := api.NewRouter(api.Options{
 		Logger:    logger,
 		Auth:      cfg.Auth,
@@ -106,4 +109,26 @@ func run(configPath string, logger *slog.Logger) error {
 		"insecure", cfg.Server.Insecure,
 	)
 	return srv.Run(ctx)
+}
+
+// sweepIdempotency periodically removes expired idempotency keys so the table
+// stays bounded. It runs until ctx is cancelled.
+func sweepIdempotency(ctx context.Context, st store.Store, logger *slog.Logger) {
+	t := time.NewTicker(time.Hour)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			n, err := st.DeleteExpiredIdempotency(context.Background())
+			if err != nil {
+				logger.Warn("idempotency sweep failed", "error", err)
+				continue
+			}
+			if n > 0 {
+				logger.Info("swept expired idempotency keys", "count", n)
+			}
+		}
+	}
 }
