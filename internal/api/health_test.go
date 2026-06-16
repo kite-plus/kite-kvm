@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -33,5 +34,16 @@ func TestReadinessUnavailable(t *testing.T) {
 	r := NewRouter(Options{Ready: func(context.Context) error { return errors.New("libvirt down") }})
 	if rec := do(r, http.MethodGet, "/readyz"); rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("/readyz = %d, want 503", rec.Code)
+	}
+}
+
+func TestVersionEndpoint(t *testing.T) {
+	r := NewRouter(Options{Version: "9.9.9"})
+	rec := do(r, http.MethodGet, "/version")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("/version = %d, want 200", rec.Code)
+	}
+	if body := rec.Body.String(); !strings.Contains(body, "9.9.9") || !strings.Contains(body, "v1") {
+		t.Errorf("/version body = %s", body)
 	}
 }

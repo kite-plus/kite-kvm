@@ -57,6 +57,23 @@ paths:
                 properties:
                   status: { type: string, example: ok }
 
+  /version:
+    get:
+      tags: [Health]
+      summary: Agent build and API version
+      security: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [version, api_version]
+                properties:
+                  version: { type: string, example: "1.2.0" }
+                  api_version: { type: string, example: "v1" }
+
   /readyz:
     get:
       tags: [Health]

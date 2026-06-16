@@ -109,6 +109,7 @@ func run(configPath string, logger *slog.Logger) error {
 		Catalog:   cat,
 		Store:     st,
 		VMService: vmService,
+		Version:   version,
 	})
 
 	srv := api.NewServer(cfg.Server, router, logger)

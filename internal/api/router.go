@@ -29,6 +29,7 @@ type Options struct {
 	Catalog   *catalog.Catalog
 	Store     store.Store
 	VMService *vm.Service
+	Version   string
 }
 
 // NewRouter builds the HTTP handler with the base middleware chain, the health
@@ -47,6 +48,12 @@ func NewRouter(opts Options) http.Handler {
 	h := &healthHandler{ready: opts.Ready}
 	r.Get("/healthz", h.handleLive)
 	r.Get("/readyz", h.handleReady)
+	r.Get("/version", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, http.StatusOK, map[string]string{
+			"version":     opts.Version,
+			"api_version": "v1",
+		})
+	})
 
 	cat := &catalogHandler{catalog: opts.Catalog}
 	jobs := &jobsHandler{store: opts.Store}
