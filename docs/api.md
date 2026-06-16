@@ -57,7 +57,7 @@ Headers: `Idempotency-Key: <unique>`.
 `network` selection precedence: `network_id` → `mode` (nat|bridge) default of that
 mode → the configured default network. Returns `202` + job.
 
-WHMCS mapping: `CreateAccount`.
+Billing action: provision.
 
 ### List / Get / Status / Stats
 
@@ -76,7 +76,7 @@ VM `status`: `provisioning | running | stopped | suspended | error | terminated`
 Headers: `Idempotency-Key`. Destroys and undefines the domain, deletes the
 overlay disk and seed, releases the IP, and marks the VM terminated. Idempotent.
 
-WHMCS mapping: `TerminateAccount`.
+Billing action: terminate.
 
 ## Power operations
 
@@ -91,14 +91,18 @@ All take `Idempotency-Key` and return `202` + job.
 
 ## Billing / reconfigure
 
-| Method | Path | Description | WHMCS |
+The "billing action" column names the neutral lifecycle operation this endpoint
+serves, so any billing system (WHMCS, IDCSmart, a custom panel, …) can map its
+own verbs onto it. The API itself is billing-system-agnostic.
+
+| Method | Path | Description | Billing action |
 |---|---|---|---|
-| POST | `/v1/vms/{id}/suspend` | Stop + mark suspended (records prior power state). | `SuspendAccount` |
-| POST | `/v1/vms/{id}/unsuspend` | Restore prior power state. | `UnsuspendAccount` |
+| POST | `/v1/vms/{id}/suspend` | Stop + mark suspended (records prior power state). | suspend |
+| POST | `/v1/vms/{id}/unsuspend` | Restore prior power state. | unsuspend |
 | POST | `/v1/vms/{id}/password` | Reset password (`{"password": "..."}`). Applies on next boot. | — |
 | POST | `/v1/vms/{id}/hostname` | Change hostname (`{"hostname": "..."}`). Applies on next boot. | — |
-| POST | `/v1/vms/{id}/rebuild` | Reinstall from an image (`{"image_id"?, "password"?, "ssh_keys"?}`). Recreates the disk; data is lost. | — |
-| POST | `/v1/vms/{id}/resize` | Change package (`{"flavor_id": "..."}`). Disk is grow-only; causes a brief reboot. | `ChangePackage` |
+| POST | `/v1/vms/{id}/rebuild` | Reinstall from an image (`{"image_id"?, "password"?, "ssh_keys"?}`). Recreates the disk; data is lost. | reinstall |
+| POST | `/v1/vms/{id}/resize` | Change package (`{"flavor_id": "..."}`). Disk is grow-only; causes a brief reboot. | change package |
 
 ## Console (VNC)
 

@@ -4,8 +4,9 @@
 
 A single-binary **KVM control node** (被控节点) that runs alongside `libvirtd` on a
 Linux host, manages local virtual machines through libvirt, and exposes an
-authenticated REST API so a billing system (WHMCS-style) or a custom panel can
-**provision, bill, and operate VPS** instances.
+authenticated REST API so any billing system (WHMCS, IDCSmart, a custom panel, …)
+can **provision, bill, and operate VPS** instances. The API is
+billing-system-agnostic — it's infrastructure; integrations live downstream.
 
 ## Design highlights
 
@@ -111,6 +112,7 @@ Implemented: VM CRUD, power operations, suspend/unsuspend, password reset,
 hostname change, rebuild, resize, browser VNC console, snapshots, live stats,
 NAT and bridged public IP, async jobs + idempotency + SQLite persistence.
 
-Planned: snapshot export/backup to a file, secondary IP / DNAT port forwarding,
-Prometheus metrics, a shipped WHMCS module, multi-host scheduling, and an LVM
-storage pool.
+Planned: an OpenAPI spec as the integration contract, snapshot export/backup to a
+file, secondary IP / DNAT port forwarding, Prometheus metrics, multi-host
+scheduling, and an LVM storage pool. (Billing-system adapters — WHMCS, IDCSmart,
+custom — are downstream consumers and live in their own repos, not here.)

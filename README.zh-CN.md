@@ -3,8 +3,8 @@
 [English](README.md) | **简体中文**
 
 一个单二进制的 **KVM 被控节点（control node）**：与 `libvirtd` 同机运行在 Linux 宿主机上，
-通过 libvirt 管理本机虚拟机，对外暴露一套带鉴权的 REST API，供 WHMCS 这类财务系统或自建面板
-**开通、计费、运维 VPS**。
+通过 libvirt 管理本机虚拟机，对外暴露一套带鉴权的 REST API，供任意财务系统（WHMCS、IDCSmart、
+自研面板……）**开通、计费、运维 VPS**。这套 API 与具体财务系统解耦——它是基建，对接适配器在下游。
 
 ## 设计要点
 
@@ -97,5 +97,6 @@ sudo systemctl enable --now kite-kvm
 已实现：VM 增删改查、电源操作、挂起/解挂、重置密码、改主机名、重装、变更套餐、
 浏览器 VNC 控制台、快照、实时统计、NAT 与桥接公网 IP、异步任务 + 幂等键 + SQLite 持久化。
 
-计划中：快照导出/备份到文件、二级 IP / DNAT 端口映射、Prometheus 指标、
-成品 WHMCS 模块、多宿主调度、LVM 存储池。
+计划中：OpenAPI 规范作为对接契约、快照导出/备份到文件、二级 IP / DNAT 端口映射、
+Prometheus 指标、多宿主调度、LVM 存储池。（财务系统适配器——WHMCS、IDCSmart、自研——
+是下游消费者，住在各自仓库里，不在本仓库。）
