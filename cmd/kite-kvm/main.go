@@ -55,6 +55,7 @@ func run(configPath string, logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
+	preflightImages(cfg.Images, logger)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -122,6 +123,22 @@ func run(configPath string, logger *slog.Logger) error {
 	// Drain the background loops before the deferred store.Close().
 	bg.Wait()
 	return err
+}
+
+// preflightImages warns (non-fatally) about configured base images whose file
+// is missing, so a typo or a forgotten download surfaces at startup rather than
+// as a failed create job later.
+func preflightImages(images []config.Image, logger *slog.Logger) {
+	missing := 0
+	for _, img := range images {
+		if _, err := os.Stat(img.BasePath); err != nil {
+			logger.Warn("base image not found", "image", img.ID, "path", img.BasePath)
+			missing++
+		}
+	}
+	if missing > 0 {
+		logger.Warn("base images missing; provisioning from them will fail until present", "count", missing)
+	}
 }
 
 // sweepIdempotency periodically removes expired idempotency keys so the table
