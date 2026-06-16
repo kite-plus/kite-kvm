@@ -26,7 +26,8 @@ type Spec struct {
 
 	MAC           string
 	Network       NetworkAttachment
-	BandwidthMbps int // optional NIC rate cap, 0 = unlimited
+	BandwidthMbps int  // optional NIC rate cap, 0 = unlimited
+	LinkDown      bool // bring the NIC link down (network cut off)
 
 	VNCListen string // VNC bind address; defaults to 127.0.0.1
 }
@@ -111,38 +112,64 @@ func buildDevices(spec Spec, listen string) devices {
 		})
 	}
 
-	iface := iface{
-		MAC:   mac{Address: spec.MAC},
-		Model: ifaceModel{Type: "virtio"},
-	}
-	switch spec.Network.Mode {
-	case ModeBridge:
-		iface.Type = "bridge"
-		iface.Source = ifaceSource{Bridge: spec.Network.Source}
-		if spec.Network.VLAN > 0 {
-			iface.VLAN = &vlan{Tag: vlanTag{ID: spec.Network.VLAN}}
-		}
-	default: // NAT
-		iface.Type = "network"
-		iface.Source = ifaceSource{Network: spec.Network.Source}
-	}
-	if spec.BandwidthMbps > 0 {
-		kbps := spec.BandwidthMbps * 125 // Mbit/s -> KB/s (libvirt's unit)
-		iface.Bandwidth = &bandwidth{
-			Inbound:  &bwParams{Average: kbps},
-			Outbound: &bwParams{Average: kbps},
-		}
-	}
-
 	return devices{
 		Disks:     disks,
-		Interface: iface,
+		Interface: buildInterface(spec),
 		Serial:    serial{Type: "pty", Target: serialTarget{Port: 0}},
 		Console:   console{Type: "pty", Target: consoleTarget{Type: "serial", Port: 0}},
 		Graphics:  graphics{Type: "vnc", Port: -1, AutoPort: "yes", Listen: listen},
 		Video:     video{Model: videoModel{Type: "vga"}},
 		MemBalloon: memballoon{Model: "virtio"},
 	}
+}
+
+// buildInterface renders the NIC element from the spec, including an optional
+// bandwidth cap and an optional link-down state (network cut off).
+func buildInterface(spec Spec) iface {
+	ifc := iface{
+		MAC:   mac{Address: spec.MAC},
+		Model: ifaceModel{Type: "virtio"},
+	}
+	switch spec.Network.Mode {
+	case ModeBridge:
+		ifc.Type = "bridge"
+		ifc.Source = ifaceSource{Bridge: spec.Network.Source}
+		if spec.Network.VLAN > 0 {
+			ifc.VLAN = &vlan{Tag: vlanTag{ID: spec.Network.VLAN}}
+		}
+	default: // NAT
+		ifc.Type = "network"
+		ifc.Source = ifaceSource{Network: spec.Network.Source}
+	}
+	if spec.BandwidthMbps > 0 {
+		kbps := spec.BandwidthMbps * 125 // Mbit/s -> KB/s (libvirt's unit)
+		ifc.Bandwidth = &bandwidth{
+			Inbound:  &bwParams{Average: kbps},
+			Outbound: &bwParams{Average: kbps},
+		}
+	}
+	if spec.LinkDown {
+		ifc.Link = &link{State: "down"}
+	}
+	return ifc
+}
+
+// RenderInterface renders just the <interface> element, for live device updates
+// (e.g. cutting or restoring the NIC link via libvirt's update-device).
+func RenderInterface(spec Spec) (string, error) {
+	switch {
+	case spec.MAC == "":
+		return "", fmt.Errorf("domainxml: mac is required")
+	case spec.Network.Source == "":
+		return "", fmt.Errorf("domainxml: network source is required")
+	case spec.Network.Mode != ModeNAT && spec.Network.Mode != ModeBridge:
+		return "", fmt.Errorf("domainxml: network mode must be %q or %q", ModeNAT, ModeBridge)
+	}
+	out, err := xml.MarshalIndent(buildInterface(spec), "", "  ")
+	if err != nil {
+		return "", fmt.Errorf("marshal interface xml: %w", err)
+	}
+	return string(out), nil
 }
 
 // --- XML schema ------------------------------------------------------------
@@ -239,12 +266,18 @@ type diskTarget struct {
 }
 
 type iface struct {
+	XMLName   xml.Name    `xml:"interface"`
 	Type      string      `xml:"type,attr"`
 	MAC       mac         `xml:"mac"`
 	Source    ifaceSource `xml:"source"`
 	Model     ifaceModel  `xml:"model"`
+	Link      *link       `xml:"link,omitempty"`
 	VLAN      *vlan       `xml:"vlan,omitempty"`
 	Bandwidth *bandwidth  `xml:"bandwidth,omitempty"`
+}
+
+type link struct {
+	State string `xml:"state,attr"`
 }
 
 type mac struct {

@@ -198,6 +198,17 @@ func (c *libvirtConn) DomainXML(ctx context.Context, name string) (string, error
 	return l.DomainGetXMLDesc(dom, 0)
 }
 
+func (c *libvirtConn) UpdateInterface(ctx context.Context, domain, ifaceXML string) error {
+	l, dom, err := c.lookup(ctx, domain)
+	if err != nil {
+		return err
+	}
+	// Live: apply to the running domain now. Config: persist so a later plain
+	// stop/start keeps the same link state.
+	flags := golibvirt.DomainDeviceModifyLive | golibvirt.DomainDeviceModifyConfig
+	return l.DomainUpdateDeviceFlags(dom, ifaceXML, flags)
+}
+
 func (c *libvirtConn) DomainVNCAddress(ctx context.Context, name string) (string, int, error) {
 	l, dom, err := c.lookup(ctx, name)
 	if err != nil {

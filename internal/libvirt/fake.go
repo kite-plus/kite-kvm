@@ -28,6 +28,7 @@ type Fake struct {
 	dhcp      map[string]map[string]dhcpHost // network -> mac -> host
 	stats     map[string]DomainStats         // optional injected per-domain stats
 	snapshots map[string][]SnapshotInfo      // domain -> snapshots
+	linkDown  map[string]bool                // domain -> NIC link down
 }
 
 type fakeDomain struct {
@@ -50,6 +51,7 @@ func NewFake() *Fake {
 		dhcp:      map[string]map[string]dhcpHost{},
 		stats:     map[string]DomainStats{},
 		snapshots: map[string][]SnapshotInfo{},
+		linkDown:  map[string]bool{},
 	}
 }
 
@@ -137,6 +139,16 @@ func (f *Fake) DomainXML(_ context.Context, name string) (string, error) {
 		return "", ErrDomainNotFound
 	}
 	return d.xml, nil
+}
+
+func (f *Fake) UpdateInterface(_ context.Context, domain, ifaceXML string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if _, ok := f.domains[domain]; !ok {
+		return ErrDomainNotFound
+	}
+	f.linkDown[domain] = strings.Contains(ifaceXML, `state="down"`)
+	return nil
 }
 
 func (f *Fake) DomainVNCAddress(_ context.Context, name string) (string, int, error) {
@@ -272,6 +284,13 @@ func (f *Fake) HasDomain(name string) bool {
 	defer f.mu.Unlock()
 	_, ok := f.domains[name]
 	return ok
+}
+
+// IsLinkDown reports whether a domain's NIC link was set down via UpdateInterface.
+func (f *Fake) IsLinkDown(domain string) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.linkDown[domain]
 }
 
 // HasVolume reports whether a volume exists in the pool.

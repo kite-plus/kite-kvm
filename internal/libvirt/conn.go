@@ -88,6 +88,11 @@ type Conn interface {
 	ResumeDomain(ctx context.Context, name string) error
 	UndefineDomain(ctx context.Context, name string) error
 
+	// UpdateInterface live-updates a domain's NIC from an <interface> XML
+	// fragment (e.g. to set the link state up/down). Affects both the running
+	// domain and its persistent config.
+	UpdateInterface(ctx context.Context, domain, ifaceXML string) error
+
 	// Read / state.
 	DomainState(ctx context.Context, name string) (DomainState, error)
 	ListDomains(ctx context.Context) ([]string, error)
