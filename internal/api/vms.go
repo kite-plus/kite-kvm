@@ -190,7 +190,8 @@ func (h *vmsHandler) revertSnapshot(w http.ResponseWriter, r *http.Request) {
 func (h *vmsHandler) rebuild(w http.ResponseWriter, r *http.Request) {
 	var req vm.RebuildRequest
 	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxIdempotentBody))
-	if err := dec.Decode(&req); err != nil {
+	// An empty body is valid: reinstall from the current image, keeping creds.
+	if err := dec.Decode(&req); err != nil && !errors.Is(err, io.EOF) {
 		writeError(w, errBadRequest("invalid JSON body"))
 		return
 	}
