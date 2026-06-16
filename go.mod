@@ -10,6 +10,7 @@ require (
 	github.com/diskfs/go-diskfs v1.9.3
 	github.com/go-chi/chi/v5 v5.3.0
 	github.com/google/uuid v1.6.0
+	libvirt.org/go/libvirtxml v1.12002.0
 	modernc.org/sqlite v1.52.0
 )
 
