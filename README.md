@@ -2,121 +2,87 @@
 
 **English** | [简体中文](README.zh-CN.md)
 
-A single-binary **KVM control node** (被控节点) that runs alongside `libvirtd` on a
-Linux host, manages local virtual machines through libvirt, and exposes an
-authenticated REST API so any billing system (WHMCS, IDCSmart, a custom panel, …)
-can **provision, bill, and operate VPS** instances. The API is
-billing-system-agnostic — it's infrastructure; integrations live downstream.
+A single-binary KVM control node (被控节点). It runs alongside `libvirtd` on a
+Linux host and exposes an authenticated REST API to provision and operate VPS
+instances. The API is billing-system-agnostic — WHMCS, IDCSmart, or a custom
+panel integrate against it from their own repos.
 
-## Design highlights
-
-- **Single binary, no cgo** — uses the pure-Go [`digitalocean/go-libvirt`](https://github.com/digitalocean/go-libvirt)
-  (RPC over the libvirt socket), so `CGO_ENABLED=0 GOOS=linux` cross-compiles a
-  static Linux binary straight from macOS with no C toolchain.
-- **Same-host deployment** — connects to `qemu:///system` over the local unix
-  socket; libvirtd is never exposed on the network.
-- **Reconciliation-grade control plane** — async jobs + idempotency keys + SQLite
-  persistence, so a billing system's retries and concurrent provisioning never
-  double-allocate.
-- **Two networking modes** — NAT (port-forwarding) and bridged public IP,
-  selectable per VM.
+- **No cgo** — pure-Go [`go-libvirt`](https://github.com/digitalocean/go-libvirt) +
+  [`libvirtxml`](https://libvirt.org/go/libvirtxml), so `CGO_ENABLED=0 GOOS=linux`
+  cross-compiles a static binary straight from macOS.
+- **Reconciliation-grade** — async jobs, idempotency keys, SQLite state, startup
+  reconciliation, and bounded retries, so a billing system's retries and
+  concurrent provisioning never double-allocate.
+- **Self-contained** — talks to `qemu:///system` over the local socket;
+  provisions via a qcow2 overlay + cloud-init seed; both NAT and bridged
+  public-IP networking are built in.
 - **Testable anywhere** — all libvirt calls sit behind one `Conn` interface, so
-  the entire pipeline is unit-testable on macOS via an in-memory fake.
+  the full pipeline runs on macOS against an in-memory fake.
 
 ## Features
 
-- VM lifecycle: create, list, get, terminate (full teardown).
-- Power: start, graceful shutdown, reboot, force stop.
-- Billing verbs: suspend, unsuspend, password reset.
-- Reconfigure: change hostname, rebuild from image, resize / change package.
-- Browser VNC console: single-use token + websocket proxy to the VM's VNC port.
-- Snapshots: create, list, delete, and revert (system checkpoints).
-- Traffic quota: per-VM combined in+out transfer cap with automatic full network
-  cutoff (NIC link down) on overage, plus manual block/unblock and period reset.
-- Live resource stats (CPU / memory / network / block) with interval rates.
-- Provisioning: thin qcow2 overlay off a golden cloud image + cloud-init NoCloud
-  seed (hostname, users, password, SSH keys, network), built in pure Go.
-- Networking: NAT with pinned DHCP leases, or a host bridge with a public IP pool;
-  optional per-NIC bandwidth cap.
-- Auth: TLS + bearer token + IP allowlist.
+VM CRUD · power ops · suspend/unsuspend · password/hostname/rebuild/resize ·
+browser VNC console · snapshots · per-VM traffic quota with automatic network
+cutoff · live stats · host capacity & admission control · TLS + bearer token +
+IP allowlist.
 
-## Quick start (local dev on macOS)
+## Requirements
 
-Without libvirt, set `libvirt.uri` to `fake://` to exercise the whole flow against
-an in-memory implementation:
+- Go 1.25+ to build.
+- A Linux host with `libvirtd` / KVM to run (the agent joins the `libvirt` group).
+
+## Quick start (no libvirt, any OS)
+
+Set `libvirt.uri: fake://` to exercise the whole flow against an in-memory
+hypervisor:
 
 ```yaml
 # configs/dev.yaml
-server: {addr: "127.0.0.1:8443", insecure: true}
-auth: {tokens: ["devtoken"]}
-libvirt: {uri: "fake://", instance_dir: "/tmp/kite-instances"}
-storage: {state_path: "/tmp/kite.db"}
-networks: [{id: nat-default, mode: nat, default: true, libvirt_network: default, subnet: "192.168.122.0/24"}]
-flavors: [{id: s1.small, name: Small, vcpus: 1, memory_mb: 1024, disk_gb: 20}]
-images:  [{id: ubuntu-22.04, name: Ubuntu 22.04, base_path: /tmp/base.img, default_user: ubuntu}]
+server:   {addr: "127.0.0.1:8443", insecure: true}
+auth:     {tokens: ["devtoken"]}
+libvirt:  {uri: "fake://", instance_dir: "/tmp/kite"}
+storage:  {state_path: "/tmp/kite.db"}
+networks: [{id: nat, mode: nat, default: true, libvirt_network: default}]
+flavors:  [{id: s1.small, name: Small, vcpus: 1, memory_mb: 1024, disk_gb: 20}]
+images:   [{id: ubuntu-22.04, name: Ubuntu, base_path: /tmp/base.img, default_user: ubuntu}]
 ```
 
 ```bash
 go run ./cmd/kite-kvm -config configs/dev.yaml
 
-curl -k -H "Authorization: Bearer devtoken" \
-  -H "Idempotency-Key: $(uuidgen)" -H "Content-Type: application/json" \
+curl -k -H "Authorization: Bearer devtoken" -H "Idempotency-Key: $(uuidgen)" \
   -d '{"flavor_id":"s1.small","image_id":"ubuntu-22.04","hostname":"web1"}' \
   https://127.0.0.1:8443/v1/vms
 ```
 
 ## Build
 
-Requires Go 1.25+.
-
 ```bash
-make build        # host binary -> bin/kite-kvm
-make build-linux  # static, cgo-free Linux binary for deployment
-make test         # unit tests
+make build         # host binary -> bin/kite-kvm
+make build-linux   # static, cgo-free Linux binary
+make test
 ```
 
-## Deploy (Linux host)
-
-The control node runs on a Linux host with `libvirtd` / KVM and access to the
-libvirt socket (typically by joining the `libvirt` group).
-
-Prerequisites:
-
-- A libvirt storage pool (default `default`, a directory pool under
-  `/var/lib/libvirt/images`).
-- Read-only golden images in `libvirt.image_base_dir` (e.g. Ubuntu/Debian cloud
-  images, which ship cloud-init and virtio).
-- NAT: the default `default`/virbr0 network. Bridge: a pre-configured host bridge
-  (e.g. `br0`) plus a public IP pool.
-- TLS certificate/key and a bearer token for the API.
+## Deploy
 
 ```bash
-make build-linux                 # static binary -> bin/kite-kvm-linux-amd64
-sudo ./deploy/install.sh         # binary, config, TLS, systemd unit, user, host bootstrap
-sudoedit /etc/kite-kvm/kite-kvm.yaml   # set auth.tokens
-sudo ./deploy/fetch-images.sh    # download golden cloud images
-sudo systemctl start kite-kvm
+make build-linux
+sudo ./deploy/install.sh   # binary, config, TLS cert, systemd unit, user, host bootstrap
 ```
 
-`deploy/install.sh` is idempotent and also generates a self-signed TLS cert and
-bootstraps the libvirt storage pool + NAT network. For public-IP (bridge) mode
-and the full install/upgrade/backup guide, see [docs/deploy.md](docs/deploy.md)
-and [deploy/networks/README.md](deploy/networks/README.md).
+`install.sh` is idempotent. See [docs/deploy.md](docs/deploy.md) for the full
+guide (TLS, bridge networking, backup, upgrade).
 
-## API
+## Documentation
 
-See [docs/api.md](docs/api.md) for the full reference. All endpoints are under
-`/v1`, require a bearer token (and pass the IP allowlist), and run over TLS.
-Mutating operations are asynchronous: they return `202` with a job, require an
-`Idempotency-Key`, and are polled via `GET /v1/jobs/{id}`.
+- API: [docs/api.md](docs/api.md) · OpenAPI [docs/openapi.yaml](docs/openapi.yaml) · rendered [docs/api.html](docs/api.html)
+- Deploy & ops: [docs/deploy.md](docs/deploy.md)
+
+All `/v1` endpoints take a bearer token over TLS. Mutating operations are
+asynchronous: `202` + a job, an `Idempotency-Key` header, polled via
+`GET /v1/jobs/{id}`.
 
 ## Roadmap
 
-Implemented: VM CRUD, power operations, suspend/unsuspend, password reset,
-hostname change, rebuild, resize, browser VNC console, snapshots, live stats,
-NAT and bridged public IP, async jobs + idempotency + SQLite persistence.
-
-Planned: an OpenAPI spec as the integration contract, snapshot export/backup to a
-file, secondary IP / DNAT port forwarding, Prometheus metrics, multi-host
-scheduling, and an LVM storage pool. (Billing-system adapters — WHMCS, IDCSmart,
-custom — are downstream consumers and live in their own repos, not here.)
+Snapshot export/backup to a file · secondary IP / DNAT port forwarding ·
+Prometheus metrics · multi-host scheduling · LVM storage pool.
