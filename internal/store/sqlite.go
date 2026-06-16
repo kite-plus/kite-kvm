@@ -255,10 +255,10 @@ func (s *SQLiteStore) CreateJob(ctx context.Context, job *model.Job) error {
 		job.CreatedAt = time.Now().UTC()
 	}
 	_, err := s.db.ExecContext(ctx, `INSERT INTO jobs (
-        id, type, vm_id, state, error, idempotency_key, payload, created_at, started_at, finished_at
-    ) VALUES (?,?,?,?,?,?,?,?,?,?)`,
+        id, type, vm_id, state, error, idempotency_key, payload, attempts, created_at, started_at, finished_at
+    ) VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
 		job.ID, string(job.Type), job.VMID, string(job.State), job.Error, job.IdempotencyKey,
-		marshalMap(job.Payload), fmtTime(job.CreatedAt), fmtTimePtr(job.StartedAt), fmtTimePtr(job.FinishedAt),
+		marshalMap(job.Payload), job.Attempts, fmtTime(job.CreatedAt), fmtTimePtr(job.StartedAt), fmtTimePtr(job.FinishedAt),
 	)
 	if err != nil {
 		return mapConstraintErr(err)
@@ -266,7 +266,7 @@ func (s *SQLiteStore) CreateJob(ctx context.Context, job *model.Job) error {
 	return nil
 }
 
-const jobColumns = `id, type, vm_id, state, error, idempotency_key, payload, created_at, started_at, finished_at`
+const jobColumns = `id, type, vm_id, state, error, idempotency_key, payload, attempts, created_at, started_at, finished_at`
 
 func scanJob(sc interface{ Scan(...any) error }) (*model.Job, error) {
 	var (
@@ -277,7 +277,7 @@ func scanJob(sc interface{ Scan(...any) error }) (*model.Job, error) {
 	)
 	if err := sc.Scan(
 		&job.ID, &typ, &job.VMID, &state, &job.Error, &job.IdempotencyKey,
-		&payload, &createdAt, &startedAt, &finishedAt,
+		&payload, &job.Attempts, &createdAt, &startedAt, &finishedAt,
 	); err != nil {
 		return nil, err
 	}
@@ -301,10 +301,10 @@ func (s *SQLiteStore) GetJob(ctx context.Context, id string) (*model.Job, error)
 
 func (s *SQLiteStore) UpdateJob(ctx context.Context, job *model.Job) error {
 	res, err := s.db.ExecContext(ctx, `UPDATE jobs SET
-        type=?, vm_id=?, state=?, error=?, idempotency_key=?, payload=?, started_at=?, finished_at=?
+        type=?, vm_id=?, state=?, error=?, idempotency_key=?, payload=?, attempts=?, started_at=?, finished_at=?
         WHERE id=?`,
 		string(job.Type), job.VMID, string(job.State), job.Error, job.IdempotencyKey,
-		marshalMap(job.Payload), fmtTimePtr(job.StartedAt), fmtTimePtr(job.FinishedAt), job.ID,
+		marshalMap(job.Payload), job.Attempts, fmtTimePtr(job.StartedAt), fmtTimePtr(job.FinishedAt), job.ID,
 	)
 	if err != nil {
 		return err

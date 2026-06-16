@@ -120,6 +120,7 @@ type Job struct {
 	Error          string            `json:"error,omitempty"`
 	IdempotencyKey string            `json:"-"`
 	Payload        map[string]string `json:"-"` // operation parameters (e.g. snapshot name)
+	Attempts       int               `json:"attempts"`
 	CreatedAt      time.Time         `json:"created_at"`
 	StartedAt      *time.Time        `json:"started_at,omitempty"`
 	FinishedAt     *time.Time        `json:"finished_at,omitempty"`

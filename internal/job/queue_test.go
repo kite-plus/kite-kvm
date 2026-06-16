@@ -5,6 +5,7 @@ import (
 	"errors"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -76,6 +77,7 @@ func TestQueueRunsJobToSuccess(t *testing.T) {
 func TestQueueRecordsFailure(t *testing.T) {
 	st := newStore(t)
 	q := NewQueue(st, 1, nil)
+	q.maxAttempts = 1 // no retries: fail on first error
 	q.SetRunner(func(ctx context.Context, job *model.Job) error {
 		return errors.New("boom")
 	})
@@ -90,6 +92,34 @@ func TestQueueRecordsFailure(t *testing.T) {
 	}
 	if done.Error != "boom" {
 		t.Errorf("error = %q, want boom", done.Error)
+	}
+}
+
+func TestQueueRetriesThenSucceeds(t *testing.T) {
+	st := newStore(t)
+	q := NewQueue(st, 1, nil)
+	q.backoffBase = time.Millisecond // fast retries for the test
+	var calls int32
+	q.SetRunner(func(ctx context.Context, job *model.Job) error {
+		if atomic.AddInt32(&calls, 1) == 1 {
+			return errors.New("transient")
+		}
+		return nil
+	})
+	q.Start(context.Background())
+	defer q.Stop()
+
+	j := New(model.JobReboot, "vm1", "")
+	_ = q.Enqueue(context.Background(), j)
+	done := waitTerminal(t, st, j.ID)
+	if done.State != model.JobSucceeded {
+		t.Errorf("state = %s, want succeeded after retry", done.State)
+	}
+	if done.Attempts != 1 {
+		t.Errorf("attempts = %d, want 1 (one retry)", done.Attempts)
+	}
+	if n := atomic.LoadInt32(&calls); n != 2 {
+		t.Errorf("runner called %d times, want 2", n)
 	}
 }
 
