@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/kite-plus/kite-kvm/internal/api"
 	"github.com/kite-plus/kite-kvm/internal/catalog"
@@ -83,6 +84,9 @@ func run(configPath string, logger *slog.Logger) error {
 	// The runner is installed by NewService; start the workers now.
 	queue.Start(ctx)
 	defer queue.Stop()
+
+	// Periodically sample per-VM transfer and enforce traffic quotas.
+	go vmService.AccountTraffic(ctx, time.Duration(cfg.Traffic.IntervalSeconds)*time.Second)
 
 	router := api.NewRouter(api.Options{
 		Logger:    logger,

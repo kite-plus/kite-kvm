@@ -95,6 +95,9 @@ const (
 	JobSnapshotCreate JobType = "snapshot_create"
 	JobSnapshotDelete JobType = "snapshot_delete"
 	JobSnapshotRevert JobType = "snapshot_revert"
+	JobNetBlock       JobType = "net_block"
+	JobNetUnblock     JobType = "net_unblock"
+	JobTrafficReset   JobType = "traffic_reset"
 	JobTerminate      JobType = "terminate"
 )
 

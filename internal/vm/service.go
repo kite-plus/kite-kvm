@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -37,6 +38,9 @@ type Service struct {
 
 	statsMu   sync.Mutex
 	lastStats map[string]statsSample
+
+	trafficMu   sync.Mutex
+	trafficLast map[string]netCounters
 }
 
 // NewService wires the dependencies and installs the job runner on the queue.
@@ -63,6 +67,7 @@ func NewService(
 		queue:       queue,
 		logger:      logger,
 		lastStats:   make(map[string]statsSample),
+		trafficLast: make(map[string]netCounters),
 	}
 	queue.SetRunner(s.RunJob)
 	return s
@@ -90,21 +95,31 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (*model.Job, er
 		hostname = "vm-" + id[:8]
 	}
 
+	quotaGB := flavor.TrafficQuotaGB
+	if req.TrafficQuotaGB != nil {
+		if *req.TrafficQuotaGB < 0 {
+			return nil, fmt.Errorf("%w: traffic_quota_gb must be >= 0", ErrInvalidRequest)
+		}
+		quotaGB = *req.TrafficQuotaGB
+	}
+
 	vm := &model.VM{
-		ID:          id,
-		DomainName:  "kvm-" + id,
-		Hostname:    hostname,
-		FlavorID:    flavor.ID,
-		ImageID:     image.ID,
-		VCPUs:       flavor.VCPUs,
-		MemoryMB:    flavor.MemoryMB,
-		DiskGB:      flavor.DiskGB,
-		NetworkID:   netCfg.ID,
-		NetworkMode: model.NetworkMode(netCfg.Mode),
-		Status:      model.VMStatusProvisioning,
-		PowerState:  model.PowerShutoff,
-		Password:    req.Password,
-		SSHKeys:     req.SSHKeys,
+		ID:                 id,
+		DomainName:         "kvm-" + id,
+		Hostname:           hostname,
+		FlavorID:           flavor.ID,
+		ImageID:            image.ID,
+		VCPUs:              flavor.VCPUs,
+		MemoryMB:           flavor.MemoryMB,
+		DiskGB:             flavor.DiskGB,
+		NetworkID:          netCfg.ID,
+		NetworkMode:        model.NetworkMode(netCfg.Mode),
+		Status:             model.VMStatusProvisioning,
+		PowerState:         model.PowerShutoff,
+		Password:           req.Password,
+		SSHKeys:            req.SSHKeys,
+		TrafficQuotaBytes:  uint64(quotaGB) * gib,
+		TrafficPeriodStart: time.Now().UTC(),
 	}
 	if err := s.store.CreateVM(ctx, vm); err != nil {
 		return nil, err
@@ -225,6 +240,12 @@ func (s *Service) RunJob(ctx context.Context, j *model.Job) error {
 		return s.runSnapshotDelete(ctx, j)
 	case model.JobSnapshotRevert:
 		return s.runSnapshotRevert(ctx, j)
+	case model.JobNetBlock:
+		return s.runNetBlock(ctx, j.VMID)
+	case model.JobNetUnblock:
+		return s.runNetUnblock(ctx, j.VMID)
+	case model.JobTrafficReset:
+		return s.runTrafficReset(ctx, j.VMID)
 	default:
 		return fmt.Errorf("unsupported job type %q", j.Type)
 	}
@@ -318,6 +339,7 @@ func (s *Service) runCreate(ctx context.Context, vmID string) error {
 		MAC:           att.MAC,
 		Network:       domainxml.NetworkAttachment{Mode: att.Mode, Source: att.Source, VLAN: att.VLAN},
 		BandwidthMbps: s.flavorBandwidth(vm.FlavorID),
+		LinkDown:      vm.NetworkBlocked,
 	})
 	if err != nil {
 		return s.failCreate(ctx, vm, att.MAC, fmt.Errorf("render domain xml: %w", err))
@@ -411,6 +433,7 @@ func (s *Service) buildDomainSpec(v *model.VM) domainxml.Spec {
 		MAC:           v.MAC,
 		Network:       s.networkAttachmentFor(v),
 		BandwidthMbps: s.flavorBandwidth(v.FlavorID),
+		LinkDown:      v.NetworkBlocked,
 	}
 }
 

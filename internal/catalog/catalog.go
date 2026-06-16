@@ -7,12 +7,13 @@ import "github.com/kite-plus/kite-kvm/internal/config"
 
 // Flavor is a sellable resource tier as presented over the API.
 type Flavor struct {
-	ID            string `json:"id"`
-	Name          string `json:"name"`
-	VCPUs         int    `json:"vcpus"`
-	MemoryMB      int    `json:"memory_mb"`
-	DiskGB        int    `json:"disk_gb"`
-	BandwidthMbps int    `json:"bandwidth_mbps,omitempty"`
+	ID             string `json:"id"`
+	Name           string `json:"name"`
+	VCPUs          int    `json:"vcpus"`
+	MemoryMB       int    `json:"memory_mb"`
+	DiskGB         int    `json:"disk_gb"`
+	BandwidthMbps  int    `json:"bandwidth_mbps,omitempty"`
+	TrafficQuotaGB int    `json:"traffic_quota_gb,omitempty"`
 }
 
 // Image is a base cloud image. BasePath is internal (the read-only golden qcow2)
@@ -43,12 +44,13 @@ func New(cfg *config.Config) *Catalog {
 	}
 	for _, f := range cfg.Flavors {
 		fl := Flavor{
-			ID:            f.ID,
-			Name:          f.Name,
-			VCPUs:         f.VCPUs,
-			MemoryMB:      f.MemoryMB,
-			DiskGB:        f.DiskGB,
-			BandwidthMbps: f.BandwidthMbps,
+			ID:             f.ID,
+			Name:           f.Name,
+			VCPUs:          f.VCPUs,
+			MemoryMB:       f.MemoryMB,
+			DiskGB:         f.DiskGB,
+			BandwidthMbps:  f.BandwidthMbps,
+			TrafficQuotaGB: f.TrafficQuotaGB,
 		}
 		c.flavors = append(c.flavors, fl)
 		c.flavorByID[fl.ID] = fl

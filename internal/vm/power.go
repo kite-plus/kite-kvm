@@ -74,5 +74,10 @@ func (s *Service) runPower(ctx context.Context, vmID string, op model.JobType) e
 	if state, err := s.conn.DomainState(ctx, v.DomainName); err == nil {
 		v.PowerState = mapPowerState(state)
 	}
+	// A live-only NIC block does not survive a stop; re-apply it on (re)start so
+	// a blocked VM never comes back online with network.
+	if op == model.JobStart && v.NetworkBlocked {
+		_ = s.applyLink(ctx, v)
+	}
 	return s.store.UpdateVM(ctx, v)
 }
