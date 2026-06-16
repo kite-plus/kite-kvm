@@ -1,0 +1,945 @@
+openapi: 3.1.0
+info:
+  title: kite-kvm Agent API
+  version: "1.0.0"
+  description: |
+    REST API of the kite-kvm control node (被控节点). The agent manages local
+    KVM virtual machines through libvirt and exposes this billing-system-agnostic
+    API so any billing system or panel (WHMCS, IDCSmart, a custom system, …) can
+    provision and operate VPS instances.
+
+    ## Conventions
+    - All `/v1` endpoints require a bearer token (`Authorization: Bearer <token>`)
+      and pass the configured source-IP allowlist. They are served over TLS.
+    - Reads are synchronous (`200`). Mutating operations are **asynchronous**:
+      they return `202 Accepted` with a job, set a `Location: /v1/jobs/{id}`
+      header, and require an `Idempotency-Key` request header. Poll the job via
+      `GET /v1/jobs/{id}`.
+    - Errors use a single envelope: `{ "error": { "code", "message" } }`.
+  license:
+    name: Proprietary
+
+servers:
+  - url: "https://{host}"
+    description: The agent's TLS address.
+    variables:
+      host:
+        default: "localhost:8443"
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: VMs
+    description: VM lifecycle, power, reconfigure, info.
+  - name: Snapshots
+  - name: Traffic
+    description: Per-VM transfer quota and network cutoff.
+  - name: Console
+  - name: Catalog
+  - name: Jobs
+  - name: Health
+
+paths:
+  /healthz:
+    get:
+      tags: [Health]
+      summary: Liveness probe
+      security: []
+      responses:
+        "200":
+          description: Process is up.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: ok }
+
+  /readyz:
+    get:
+      tags: [Health]
+      summary: Readiness probe (libvirt reachable)
+      security: []
+      responses:
+        "200":
+          description: Ready.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: ready }
+        "503":
+          description: A dependency (libvirt) is unavailable.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: unavailable }
+                  error: { type: string }
+
+  /v1/flavors:
+    get:
+      tags: [Catalog]
+      summary: List provisionable flavors
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [flavors]
+                properties:
+                  flavors:
+                    type: array
+                    items: { $ref: "#/components/schemas/Flavor" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /v1/images:
+    get:
+      tags: [Catalog]
+      summary: List base images
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [images]
+                properties:
+                  images:
+                    type: array
+                    items: { $ref: "#/components/schemas/Image" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /v1/jobs/{id}:
+    get:
+      tags: [Jobs]
+      summary: Poll an async job
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Job" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/vms:
+    get:
+      tags: [VMs]
+      summary: List VMs
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [vms]
+                properties:
+                  vms:
+                    type: array
+                    items: { $ref: "#/components/schemas/VM" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [VMs]
+      summary: Provision a VM
+      description: "Billing action: provision. Returns 202 + job."
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateRequest" }
+      responses:
+        "202": { $ref: "#/components/responses/Accepted" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/Unprocessable" }
+
+  /v1/vms/{id}:
+    get:
+      tags: [VMs]
+      summary: Get a VM
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/VM" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [VMs]
+      summary: Terminate a VM
+      description: "Billing action: terminate. Destroys, undefines, deletes disk/seed, releases IP. Idempotent."
+      parameters:
+        - $ref: "#/components/parameters/Id"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "202": { $ref: "#/components/responses/Accepted" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /v1/vms/{id}/status:
+    get:
+      tags: [VMs]
+      summary: Get VM lifecycle status and live power state
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StatusInfo" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/vms/{id}/stats:
+    get:
+      tags: [VMs]
+      summary: Live resource usage with interval rates
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StatsInfo" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/vms/{id}/start:
+    post:
+      tags: [VMs]
+      summary: Start a VM
+      parameters: [{ $ref: "#/components/parameters/Id" }, { $ref: "#/components/parameters/IdempotencyKey" }]
+      responses:
+        "202": { $ref: "#/components/responses/Accepted" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /v1/vms/{id}/shutdown:
+    post:
+      tags: [VMs]
+      summary: Gracefully shut down a VM (ACPI)
+      parameters: [{ $ref: "#/components/parameters/Id" }, { $ref: "#/components/parameters/IdempotencyKey" }]
+      responses:
+        "202": { $ref: "#/components/responses/Accepted" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /v1/vms/{id}/reboot:
+    post:
+      tags: [VMs]
+      summary: Reboot a VM
+      parameters: [{ $ref: "#/components/parameters/Id" }, { $ref: "#/components/parameters/IdempotencyKey" }]
+      responses:
+        "202": { $ref: "#/components/responses/Accepted" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /v1/vms/{id}/stop:
+    post:
+      tags: [VMs]
+      summary: Force power-off a VM
+      parameters: [{ $ref: "#/components/parameters/Id" }, { $ref: "#/components/parameters/IdempotencyKey" }]
+      responses:
+        "202": { $ref: "#/components/responses/Accepted" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /v1/vms/{id}/suspend:
+    post:
+      tags: [VMs]
+      summary: Suspend a VM
+      description: "Billing action: suspend. Stops the VM and records its prior power state."
+      parameters: [{ $ref: "#/components/parameters/Id" }, { $ref: "#/components/parameters/IdempotencyKey" }]
+      responses:
+        "202": { $ref: "#/components/responses/Accepted" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /v1/vms/{id}/unsuspend:
+    post:
+      tags: [VMs]
+      summary: Unsuspend a VM
+      description: "Billing action: unsuspend. Restores the prior power state."
+      parameters: [{ $ref: "#/components/parameters/Id" }, { $ref: "#/components/parameters/IdempotencyKey" }]
+      responses:
+        "202": { $ref: "#/components/responses/Accepted" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /v1/vms/{id}/password:
+    post:
+      tags: [VMs]
+      summary: Reset the VM password
+      description: Re-seeds cloud-init; applies on the next boot.
+      parameters: [{ $ref: "#/components/parameters/Id" }, { $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [password]
+              properties:
+                password: { type: string }
+      responses:
+        "202": { $ref: "#/components/responses/Accepted" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /v1/vms/{id}/hostname:
+    post:
+      tags: [VMs]
+      summary: Change the VM hostname
+      description: Re-seeds cloud-init; applies on the next boot.
+      parameters: [{ $ref: "#/components/parameters/Id" }, { $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [hostname]
+              properties:
+                hostname: { type: string }
+      responses:
+        "202": { $ref: "#/components/responses/Accepted" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /v1/vms/{id}/rebuild:
+    post:
+      tags: [VMs]
+      summary: Reinstall the VM from an image
+      description: "Billing action: reinstall. Recreates the root disk; all data is lost. Empty fields keep current values."
+      parameters: [{ $ref: "#/components/parameters/Id" }, { $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RebuildRequest" }
+      responses:
+        "202": { $ref: "#/components/responses/Accepted" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/Unprocessable" }
+
+  /v1/vms/{id}/resize:
+    post:
+      tags: [VMs]
+      summary: Change the VM package (resize)
+      description: "Billing action: change package. Disk is grow-only (shrink rejected); causes a brief reboot."
+      parameters: [{ $ref: "#/components/parameters/Id" }, { $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [flavor_id]
+              properties:
+                flavor_id: { type: string }
+      responses:
+        "202": { $ref: "#/components/responses/Accepted" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/Unprocessable" }
+
+  /v1/vms/{id}/snapshots:
+    get:
+      tags: [Snapshots]
+      summary: List snapshots
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [snapshots]
+                properties:
+                  snapshots:
+                    type: array
+                    items: { $ref: "#/components/schemas/SnapshotInfo" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+    post:
+      tags: [Snapshots]
+      summary: Create a snapshot
+      parameters: [{ $ref: "#/components/parameters/Id" }, { $ref: "#/components/parameters/IdempotencyKey" }]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string, description: "Optional; auto-generated if blank. Sanitized to [A-Za-z0-9-_.]." }
+                description: { type: string }
+      responses:
+        "202": { $ref: "#/components/responses/Accepted" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /v1/vms/{id}/snapshots/{snap}:
+    delete:
+      tags: [Snapshots]
+      summary: Delete a snapshot
+      parameters:
+        - $ref: "#/components/parameters/Id"
+        - $ref: "#/components/parameters/Snap"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "202": { $ref: "#/components/responses/Accepted" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /v1/vms/{id}/snapshots/{snap}/revert:
+    post:
+      tags: [Snapshots]
+      summary: Revert the VM to a snapshot
+      parameters:
+        - $ref: "#/components/parameters/Id"
+        - $ref: "#/components/parameters/Snap"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "202": { $ref: "#/components/responses/Accepted" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /v1/vms/{id}/traffic:
+    get:
+      tags: [Traffic]
+      summary: Get traffic usage
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TrafficInfo" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+    put:
+      tags: [Traffic]
+      summary: Set the VM traffic quota
+      description: Synchronous metadata update (no Idempotency-Key required). 0 = unlimited.
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [quota_gb]
+              properties:
+                quota_gb: { type: integer, minimum: 0, description: "Combined in+out cap in GiB; 0 = unlimited." }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TrafficInfo" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /v1/vms/{id}/traffic/reset:
+    post:
+      tags: [Traffic]
+      summary: Reset the traffic period
+      description: Zeroes usage, starts a new period, and restores network if it was quota-blocked.
+      parameters: [{ $ref: "#/components/parameters/Id" }, { $ref: "#/components/parameters/IdempotencyKey" }]
+      responses:
+        "202": { $ref: "#/components/responses/Accepted" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /v1/vms/{id}/traffic/block:
+    post:
+      tags: [Traffic]
+      summary: Manually cut the VM network
+      parameters: [{ $ref: "#/components/parameters/Id" }, { $ref: "#/components/parameters/IdempotencyKey" }]
+      responses:
+        "202": { $ref: "#/components/responses/Accepted" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /v1/vms/{id}/traffic/unblock:
+    post:
+      tags: [Traffic]
+      summary: Manually restore the VM network
+      parameters: [{ $ref: "#/components/parameters/Id" }, { $ref: "#/components/parameters/IdempotencyKey" }]
+      responses:
+        "202": { $ref: "#/components/responses/Accepted" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /v1/vms/{id}/console:
+    post:
+      tags: [Console]
+      summary: Mint a single-use VNC console token
+      description: |
+        Returns a single-use, 60-second token and the websocket path. The browser
+        (noVNC) then connects to `GET /console/ws/{token}`. The VM must be running.
+        Synchronous; no Idempotency-Key required.
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ConsoleTicket" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /console/ws/{token}:
+    get:
+      tags: [Console]
+      summary: VNC console websocket proxy
+      description: |
+        Upgrades to a WebSocket (binary subprotocol) and proxies the VM's VNC (RFB)
+        stream. Authenticated solely by the single-use `{token}` in the path —
+        mounted outside the bearer/allowlist middleware so browsers can connect.
+      security: []
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "101":
+          description: Switching Protocols (WebSocket established).
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: |
+        `Authorization: Bearer <token>` against the configured token allowlist.
+        All `/v1` routes additionally pass a source-IP allowlist (a network-layer
+        gate, not expressible here). The console websocket is the only `/v1`-class
+        capability exempt from bearer auth — it uses a single-use path token.
+
+  parameters:
+    Id:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    Snap:
+      name: snap
+      in: path
+      required: true
+      schema: { type: string }
+      description: Snapshot name.
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema: { type: string }
+      description: |
+        Required on all mutating operations. The fingerprint is
+        `SHA-256(method + "\n" + path + "\n" + body)` (body up to 1 MiB). A retry
+        with the same key and fingerprint replays the original response verbatim
+        with `Idempotent-Replayed: true`. A different fingerprint for the same key,
+        or a request still in progress, returns 409.
+
+  responses:
+    Accepted:
+      description: Accepted; the operation runs asynchronously as a job.
+      headers:
+        Location:
+          description: URL of the created job.
+          schema: { type: string, example: /v1/jobs/2b1c... }
+        Idempotent-Replayed:
+          description: Present and `true` only when this response is an idempotency replay.
+          schema: { type: string }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/AcceptedJob" }
+    BadRequest:
+      description: Invalid request (bad JSON, missing Idempotency-Key, invalid value).
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Unauthorized:
+      description: Missing or invalid bearer token.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Forbidden:
+      description: Source address not allowed, or invalid/expired console token.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    NotFound:
+      description: Resource not found.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Conflict:
+      description: State conflict (terminated, not running, idempotency clash, no IP available).
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Unprocessable:
+      description: Referenced flavor/image/network does not exist.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Internal:
+      description: Internal error.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              enum: [bad_request, unauthorized, forbidden, not_found, conflict, unprocessable, not_implemented, internal]
+            message: { type: string }
+
+    AcceptedJob:
+      type: object
+      required: [job_id, status, vm_id]
+      properties:
+        job_id: { type: string }
+        status: { $ref: "#/components/schemas/JobState" }
+        vm_id:
+          type: string
+          description: The target VM id. For create, the assigned VM id is returned here immediately.
+
+    Job:
+      type: object
+      required: [id, type, state, created_at]
+      properties:
+        id: { type: string }
+        type: { $ref: "#/components/schemas/JobType" }
+        vm_id: { type: string }
+        state: { $ref: "#/components/schemas/JobState" }
+        error: { type: string }
+        created_at: { type: string, format: date-time }
+        started_at: { type: string, format: date-time }
+        finished_at: { type: string, format: date-time }
+
+    VM:
+      type: object
+      required:
+        - id
+        - domain_name
+        - domain_uuid
+        - hostname
+        - flavor_id
+        - image_id
+        - vcpus
+        - memory_mb
+        - disk_gb
+        - network_id
+        - network_mode
+        - mac
+        - ip
+        - status
+        - power_state
+        - traffic_quota_bytes
+        - traffic_used_bytes
+        - traffic_period_start
+        - network_blocked
+        - created_at
+        - updated_at
+      properties:
+        id: { type: string, format: uuid }
+        domain_name: { type: string }
+        domain_uuid: { type: string }
+        hostname: { type: string }
+        flavor_id: { type: string }
+        image_id: { type: string }
+        vcpus: { type: integer }
+        memory_mb: { type: integer }
+        disk_gb: { type: integer }
+        network_id: { type: string }
+        network_mode: { $ref: "#/components/schemas/NetworkMode" }
+        mac: { type: string }
+        ip: { type: string }
+        gateway: { type: string }
+        netmask: { type: string }
+        status: { $ref: "#/components/schemas/VMStatus" }
+        power_state: { $ref: "#/components/schemas/PowerState" }
+        ssh_keys:
+          type: array
+          items: { type: string }
+        traffic_quota_bytes: { type: integer, format: int64, description: "0 = unlimited." }
+        traffic_used_bytes: { type: integer, format: int64 }
+        traffic_period_start: { type: string, format: date-time }
+        network_blocked: { type: boolean }
+        network_block_reason: { type: string, enum: [quota, manual] }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    StatusInfo:
+      type: object
+      required: [id, status, power_state]
+      properties:
+        id: { type: string }
+        status: { $ref: "#/components/schemas/VMStatus" }
+        power_state: { $ref: "#/components/schemas/PowerState" }
+
+    StatsInfo:
+      type: object
+      required:
+        - id
+        - power_state
+        - cpu_time_ns
+        - cpu_percent
+        - mem_balloon_kib
+        - mem_rss_kib
+        - net_rx_bytes
+        - net_tx_bytes
+        - net_rx_bps
+        - net_tx_bps
+        - block_rd_bytes
+        - block_wr_bytes
+        - block_rd_bps
+        - block_wr_bps
+        - block_allocation_bytes
+        - block_capacity_bytes
+        - interval_seconds
+      properties:
+        id: { type: string }
+        power_state: { $ref: "#/components/schemas/PowerState" }
+        cpu_time_ns: { type: integer, format: int64 }
+        cpu_percent: { type: number }
+        mem_balloon_kib: { type: integer, format: int64 }
+        mem_rss_kib: { type: integer, format: int64 }
+        net_rx_bytes: { type: integer, format: int64 }
+        net_tx_bytes: { type: integer, format: int64 }
+        net_rx_bps: { type: number }
+        net_tx_bps: { type: number }
+        block_rd_bytes: { type: integer, format: int64 }
+        block_wr_bytes: { type: integer, format: int64 }
+        block_rd_bps: { type: number }
+        block_wr_bps: { type: number }
+        block_allocation_bytes: { type: integer, format: int64 }
+        block_capacity_bytes: { type: integer, format: int64 }
+        interval_seconds: { type: number }
+
+    TrafficInfo:
+      type: object
+      required: [id, quota_bytes, used_bytes, unlimited, percent, period_start, blocked]
+      properties:
+        id: { type: string }
+        quota_bytes: { type: integer, format: int64, description: "0 = unlimited." }
+        used_bytes: { type: integer, format: int64 }
+        unlimited: { type: boolean }
+        percent: { type: number }
+        period_start: { type: string, format: date-time }
+        blocked: { type: boolean }
+        block_reason: { type: string, enum: [quota, manual] }
+
+    SnapshotInfo:
+      type: object
+      required: [name, creation_time, current]
+      properties:
+        name: { type: string }
+        state: { type: string }
+        creation_time: { type: string, format: date-time }
+        current: { type: boolean }
+
+    Flavor:
+      type: object
+      required: [id, name, vcpus, memory_mb, disk_gb]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        vcpus: { type: integer }
+        memory_mb: { type: integer }
+        disk_gb: { type: integer }
+        bandwidth_mbps: { type: integer, description: "0/absent = unlimited." }
+        traffic_quota_gb: { type: integer, description: "0/absent = unlimited." }
+
+    Image:
+      type: object
+      required: [id, name, os_variant, default_user]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        os_variant: { type: string }
+        default_user: { type: string }
+
+    CreateRequest:
+      type: object
+      required: [flavor_id, image_id]
+      properties:
+        flavor_id: { type: string }
+        image_id: { type: string }
+        hostname: { type: string }
+        password: { type: string }
+        ssh_keys:
+          type: array
+          items: { type: string }
+        network: { $ref: "#/components/schemas/NetworkRequest" }
+        traffic_quota_gb:
+          type: integer
+          nullable: true
+          description: "Override the flavor default. null/absent = flavor default; 0 = unlimited."
+
+    NetworkRequest:
+      type: object
+      description: "network_id wins; else mode picks that mode's default; else the configured default network."
+      properties:
+        network_id: { type: string }
+        mode: { $ref: "#/components/schemas/NetworkMode" }
+
+    RebuildRequest:
+      type: object
+      description: All fields optional; empty keeps the current value.
+      properties:
+        image_id: { type: string }
+        password: { type: string }
+        ssh_keys:
+          type: array
+          items: { type: string }
+
+    ConsoleTicket:
+      type: object
+      required: [token, websocket_path, expires_at]
+      properties:
+        token: { type: string }
+        websocket_path: { type: string, example: /console/ws/AbC123 }
+        expires_at: { type: string, format: date-time }
+
+    VMStatus:
+      type: string
+      enum: [provisioning, running, stopped, suspended, error, terminated]
+
+    PowerState:
+      type: string
+      enum: [unknown, running, shutoff, paused]
+
+    NetworkMode:
+      type: string
+      enum: [nat, bridge]
+
+    JobType:
+      type: string
+      enum:
+        - create
+        - start
+        - shutdown
+        - reboot
+        - stop
+        - suspend
+        - unsuspend
+        - password
+        - hostname
+        - rebuild
+        - resize
+        - snapshot_create
+        - snapshot_delete
+        - snapshot_revert
+        - net_block
+        - net_unblock
+        - traffic_reset
+        - terminate
+
+    JobState:
+      type: string
+      enum: [queued, running, succeeded, failed]
