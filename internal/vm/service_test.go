@@ -150,9 +150,9 @@ func TestListGetStatus(t *testing.T) {
 	}
 	waitVM(t, st, j.VMID)
 
-	list, err := svc.List(ctx)
-	if err != nil || len(list) != 1 {
-		t.Fatalf("List: %v len=%d", err, len(list))
+	list, err := svc.List(ctx, ListOptions{})
+	if err != nil || list.Total != 1 || len(list.VMs) != 1 {
+		t.Fatalf("List: %v total=%d page=%d", err, list.Total, len(list.VMs))
 	}
 
 	got, err := svc.Get(ctx, j.VMID)
@@ -566,6 +566,30 @@ func TestSnapshots(t *testing.T) {
 
 	if _, err := svc.SnapshotDelete(ctx, rec.ID, ""); !errors.Is(err, ErrInvalidRequest) {
 		t.Errorf("empty snapshot name = %v, want ErrInvalidRequest", err)
+	}
+}
+
+func TestListPaginationAndFilter(t *testing.T) {
+	svc, _, st := testService(t)
+	ctx := context.Background()
+	for i := 0; i < 3; i++ {
+		j, _ := svc.Create(ctx, CreateRequest{FlavorID: "s1.small", ImageID: "ubuntu-22.04"})
+		waitVM(t, st, j.VMID)
+	}
+
+	r1, _ := svc.List(ctx, ListOptions{Limit: 2, Offset: 0})
+	if r1.Total != 3 || len(r1.VMs) != 2 {
+		t.Fatalf("page1: total=%d page=%d, want 3/2", r1.Total, len(r1.VMs))
+	}
+	r2, _ := svc.List(ctx, ListOptions{Limit: 2, Offset: 2})
+	if r2.Total != 3 || len(r2.VMs) != 1 {
+		t.Fatalf("page2: total=%d page=%d, want 3/1", r2.Total, len(r2.VMs))
+	}
+	if running, _ := svc.List(ctx, ListOptions{Status: "running"}); running.Total != 3 {
+		t.Errorf("status=running total=%d, want 3", running.Total)
+	}
+	if none, _ := svc.List(ctx, ListOptions{Status: "suspended"}); none.Total != 0 || len(none.VMs) != 0 {
+		t.Errorf("status=suspended total=%d page=%d, want 0/0", none.Total, len(none.VMs))
 	}
 }
 

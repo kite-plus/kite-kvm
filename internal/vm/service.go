@@ -151,16 +151,92 @@ type StatusInfo struct {
 	PowerState model.PowerState `json:"power_state"`
 }
 
-// List returns all VMs, each with its power state reconciled against libvirt.
-func (s *Service) List(ctx context.Context) ([]*model.VM, error) {
-	vms, err := s.store.ListVMs(ctx)
+// ListOptions filters and paginates a VM list.
+type ListOptions struct {
+	Limit     int
+	Offset    int
+	Status    string // exact VM status filter; "" = any
+	NetworkID string // exact network filter; "" = any
+}
+
+// ListResult is a page of VMs plus the total matching the filter.
+type ListResult struct {
+	VMs    []*model.VM
+	Total  int
+	Limit  int
+	Offset int
+}
+
+const (
+	defaultListLimit = 100
+	maxListLimit     = 500
+)
+
+// List returns a filtered, paginated page of VMs. Power state for the returned
+// page is reconciled against libvirt in a single bulk call (not one RPC per VM).
+func (s *Service) List(ctx context.Context, opts ListOptions) (*ListResult, error) {
+	all, err := s.store.ListVMs(ctx)
 	if err != nil {
 		return nil, err
 	}
-	for _, v := range vms {
-		s.reconcilePower(ctx, v)
+	var filtered []*model.VM
+	for _, v := range all {
+		if opts.Status != "" && string(v.Status) != opts.Status {
+			continue
+		}
+		if opts.NetworkID != "" && v.NetworkID != opts.NetworkID {
+			continue
+		}
+		filtered = append(filtered, v)
 	}
-	return vms, nil
+	total := len(filtered)
+
+	limit := opts.Limit
+	if limit <= 0 {
+		limit = defaultListLimit
+	}
+	if limit > maxListLimit {
+		limit = maxListLimit
+	}
+	offset := opts.Offset
+	if offset < 0 {
+		offset = 0
+	}
+	page := []*model.VM{}
+	if offset < total {
+		end := offset + limit
+		if end > total {
+			end = total
+		}
+		page = filtered[offset:end]
+	}
+	s.batchReconcilePower(ctx, page)
+	return &ListResult{VMs: page, Total: total, Limit: limit, Offset: offset}, nil
+}
+
+// batchReconcilePower refreshes power state for a set of VMs using one bulk
+// AllDomainStats call instead of a per-VM DomainState RPC. Domains absent from
+// the bulk stats (e.g. shut off) keep their stored power state.
+func (s *Service) batchReconcilePower(ctx context.Context, vms []*model.VM) {
+	if len(vms) == 0 {
+		return
+	}
+	stats, err := s.conn.AllDomainStats(ctx)
+	if err != nil {
+		return
+	}
+	byName := make(map[string]libvirt.DomainState, len(stats))
+	for _, st := range stats {
+		byName[st.Name] = st.State
+	}
+	for _, v := range vms {
+		if v.Status == model.VMStatusTerminated {
+			continue
+		}
+		if st, ok := byName[v.DomainName]; ok {
+			v.PowerState = mapPowerState(st)
+		}
+	}
 }
 
 // Get returns one VM with its power state reconciled against libvirt.

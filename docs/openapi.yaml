@@ -170,7 +170,21 @@ paths:
   /v1/vms:
     get:
       tags: [VMs]
-      summary: List VMs
+      summary: List VMs (paginated, filterable)
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, default: 100, maximum: 500 }
+        - name: offset
+          in: query
+          schema: { type: integer, default: 0 }
+        - name: status
+          in: query
+          description: Filter by exact VM status.
+          schema: { $ref: "#/components/schemas/VMStatus" }
+        - name: network_id
+          in: query
+          schema: { type: string }
       responses:
         "200":
           description: OK
@@ -178,11 +192,14 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [vms]
+                required: [vms, total, limit, offset]
                 properties:
                   vms:
                     type: array
                     items: { $ref: "#/components/schemas/VM" }
+                  total: { type: integer, description: Total VMs matching the filter. }
+                  limit: { type: integer }
+                  offset: { type: integer }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
     post:

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"strconv"
 
 	"github.com/go-chi/chi/v5"
 
@@ -20,15 +21,37 @@ type vmsHandler struct {
 }
 
 func (h *vmsHandler) list(w http.ResponseWriter, r *http.Request) {
-	vms, err := h.service.List(r.Context())
+	q := r.URL.Query()
+	res, err := h.service.List(r.Context(), vm.ListOptions{
+		Limit:     atoiOr(q.Get("limit"), 0),
+		Offset:    atoiOr(q.Get("offset"), 0),
+		Status:    q.Get("status"),
+		NetworkID: q.Get("network_id"),
+	})
 	if err != nil {
 		writeError(w, mapVMError(err))
 		return
 	}
-	if vms == nil {
-		vms = []*model.VM{}
+	if res.VMs == nil {
+		res.VMs = []*model.VM{}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"vms": vms})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"vms":    res.VMs,
+		"total":  res.Total,
+		"limit":  res.Limit,
+		"offset": res.Offset,
+	})
+}
+
+func atoiOr(s string, def int) int {
+	if s == "" {
+		return def
+	}
+	n, err := strconv.Atoi(s)
+	if err != nil {
+		return def
+	}
+	return n
 }
 
 func (h *vmsHandler) get(w http.ResponseWriter, r *http.Request) {
