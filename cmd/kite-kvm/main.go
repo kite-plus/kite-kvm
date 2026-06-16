@@ -81,9 +81,11 @@ func run(configPath string, logger *slog.Logger) error {
 
 	queue := job.NewQueue(st, jobWorkers, logger)
 	vmService := vm.NewService(cfg, st, conn, cat, netmgr, provisioner, queue, logger)
-	// The runner is installed by NewService; start the workers now.
+	// The runner is installed by NewService; start the workers now. recover()
+	// settles interrupted jobs; then reconcile VMs the crash left mid-flight.
 	queue.Start(ctx)
 	defer queue.Stop()
+	vmService.ReconcileOnStart(ctx)
 
 	// Periodically sample per-VM transfer and enforce traffic quotas.
 	go vmService.AccountTraffic(ctx, time.Duration(cfg.Traffic.IntervalSeconds)*time.Second)
